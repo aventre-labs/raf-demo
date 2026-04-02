@@ -1,0 +1,89 @@
+@import "tailwindcss";
+
+:root {
+  --bg-primary: #0a0f1a;
+  --bg-card: #111827;
+  --bg-card-hover: #1f2937;
+  --accent-blue: #3b82f6;
+  --accent-purple: #8b5cf6;
+  --accent-emerald: #10b981;
+  --accent-amber: #f59e0b;
+  --accent-rose: #f43f5e;
+  --text-primary: #f9fafb;
+  --text-secondary: #9ca3af;
+  --border: #1f2937;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'Space Grotesk', sans-serif;
+}
+
+code, pre, .mono {
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* D3 Graph styles */
+.graph-link {
+  stroke-dasharray: 8 4;
+  animation: flowDash 1.5s linear infinite;
+}
+
+@keyframes flowDash {
+  to {
+    stroke-dashoffset: -24;
+  }
+}
+
+.graph-node circle {
+  transition: filter 0.3s ease;
+}
+
+.graph-node.active circle {
+  filter: drop-shadow(0 0 8px currentColor);
+  animation: nodePulse 1.5s ease-in-out infinite;
+}
+
+@keyframes nodePulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.7; transform: scale(1.1); }
+}
+
+.node-result circle {
+  filter: drop-shadow(0 0 12px #10b981);
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 4px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg-primary);
+}
+::-webkit-scrollbar-thumb {
+  background: #374151;
+  border-radius: 2px;
+}
+
+/* Skeleton loading */
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.8; }
+}
+.skeleton {
+  animation: skeleton-pulse 1.5s ease-in-out infinite;
+  background: #1f2937;
+  border-radius: 4px;
+}
