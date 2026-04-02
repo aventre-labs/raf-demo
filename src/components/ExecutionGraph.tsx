@@ -34,14 +34,19 @@ export function ExecutionGraph({ nodes, links }: Props) {
   const initializedRef = useRef(false);
 
   const graphData = useMemo(() => {
-    // Filter out links that reference nodes not yet in the graph (prevents D3 crash)
+    // D3 mutates link.source/target from strings to object refs. We must:
+    // 1. Always pass string IDs (deep-clone links)
+    // 2. Filter links referencing nodes not yet in the graph
     const nodeIds = new Set(nodes.map((n) => n.id));
-    const safeLinks = links.filter((l) => {
-      const src = typeof l.source === 'string' ? l.source : l.source.id;
-      const tgt = typeof l.target === 'string' ? l.target : l.target.id;
-      return nodeIds.has(src) && nodeIds.has(tgt);
-    });
-    return { nodes, links: safeLinks };
+    const safeLinks: GraphLink[] = [];
+    for (const l of links) {
+      const src = typeof l.source === 'string' ? l.source : (l.source as GraphNode).id;
+      const tgt = typeof l.target === 'string' ? l.target : (l.target as GraphNode).id;
+      if (nodeIds.has(src) && nodeIds.has(tgt)) {
+        safeLinks.push({ ...l, source: src, target: tgt });
+      }
+    }
+    return { nodes: nodes.map((n) => ({ ...n })), links: safeLinks };
   }, [nodes, links]);
 
   useEffect(() => {
