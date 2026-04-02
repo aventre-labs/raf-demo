@@ -366,7 +366,7 @@ export default function App() {
                     Structured decomposition lets an <span className="text-[#3b82f6]">8B model</span> punch absurdly above its weight.
                   </h2>
                   <p className="mt-4 max-w-2xl text-[15px] leading-7 text-[#9ca3af]">
-                    RAF splits a hard reasoning task into steps, spins up three independent solver traces, and majority-votes the answer. Same model. Better orchestration. Better reliability.
+                    RAF routes through 4 clusters: a <span className="text-[#c4b5fd]">Decomposer</span> breaks the problem into steps, <span className="text-[#93c5fd]">k independent Solvers</span> attack it in parallel, a <span className="text-[#fcd34d]">Validator</span> filters noise, and an <span className="text-[#6ee7b7]">Aggregator</span> majority-votes the answer. Same model. Better orchestration. Better reliability.
                   </p>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
@@ -423,7 +423,7 @@ export default function App() {
                       className="h-44 w-full resize-none rounded-2xl border border-white/8 bg-[#0a0f1a] px-4 py-3 text-[15px] leading-6 text-white outline-none ring-0 placeholder:text-[#6b7280] focus:border-[#3b82f6]/70"
                     />
                     <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-                      <p className="text-sm text-[#9ca3af]">Run the full recursive decomposition + {params.numVoters}-voter {params.votingStrategy} pipeline.</p>
+                      <p className="text-sm text-[#9ca3af]">Run the full recursive decomposition + {params.solver.numVoters}-voter {params.aggregator.votingStrategy} pipeline.</p>
                       <motion.button
                         whileHover={{ y: -2 }}
                         whileTap={{ scale: 0.98 }}
@@ -438,9 +438,10 @@ export default function App() {
                   <div className="rounded-[24px] border border-white/8 bg-[#0d1524] p-4">
                     <div className="text-xs uppercase tracking-[0.18em] text-[#9ca3af]">Why this works</div>
                     <div className="mt-3 space-y-3 text-sm leading-6 text-[#cbd5e1]">
-                      <div className="rounded-2xl border border-white/6 bg-white/[0.03] p-3">1. Decompose the problem into explicit intermediate computations.</div>
-                      <div className="rounded-2xl border border-white/6 bg-white/[0.03] p-3">2. Solve three times with independent stochastic traces.</div>
-                      <div className="rounded-2xl border border-white/6 bg-white/[0.03] p-3">3. Majority-vote the extracted answer to suppress single-run failure modes.</div>
+                      <div className="rounded-2xl border border-white/6 bg-white/[0.03] p-3">🧩 <span className="text-[#c4b5fd] font-medium">Decomposer</span> breaks the problem into numbered sub-steps.</div>
+                      <div className="rounded-2xl border border-white/6 bg-white/[0.03] p-3">🗳️ <span className="text-[#93c5fd] font-medium">{params.solver.numVoters} Solvers</span> independently attack the problem using the decomposition.</div>
+                      <div className="rounded-2xl border border-white/6 bg-white/[0.03] p-3">🔍 <span className="text-[#fcd34d] font-medium">Validator</span> parses and filters answers by format and tolerance.</div>
+                      <div className="rounded-2xl border border-white/6 bg-white/[0.03] p-3">📊 <span className="text-[#6ee7b7] font-medium">Aggregator</span> groups close answers and {params.aggregator.votingStrategy}-votes the winner.</div>
                     </div>
                   </div>
                 </div>
@@ -531,7 +532,7 @@ export default function App() {
                             <div>
                               <div className="text-xs uppercase tracking-[0.2em] text-[#9ca3af]">Majority vote result</div>
                               <div className="mt-2 font-['Space_Grotesk'] text-4xl font-semibold text-white">{String(activeSession.result.finalAnswer ?? '—')}</div>
-                              <div className="mt-2 text-sm text-[#cbd5e1]">Confidence: {activeSession.result.confidence}/3 voters agreed</div>
+                              <div className="mt-2 text-sm text-[#cbd5e1]">Confidence: {activeSession.result.confidence}/{params.solver.numVoters} voters agreed</div>
                             </div>
                             {benchmarkOutcome && (
                               <div className={`rounded-2xl border px-4 py-3 text-sm ${answerMatches(activeSession.result.finalAnswer, benchmarkOutcome.expectedAnswer) ? 'border-[#10b981]/30 bg-[#10b981]/10 text-[#d1fae5]' : 'border-[#f43f5e]/30 bg-[#f43f5e]/10 text-[#ffe4e6]'}`}>

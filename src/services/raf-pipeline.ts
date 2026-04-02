@@ -22,18 +22,28 @@ function parseAnswer(text: string): number | string | null {
   return null;
 }
 
-function answerKey(answer: number | string | null): string | null {
+function answerKey(
+  answer: number | string | null,
+  tolerance: number,
+): string | null {
   if (answer === null) return null;
-  if (typeof answer === 'number') return String(Math.round(answer * 100) / 100);
+  if (typeof answer === 'number') {
+    // bucket by tolerance so close numbers group together
+    if (tolerance > 0) {
+      return String(Math.round(answer / tolerance) * tolerance);
+    }
+    return String(Math.round(answer * 100) / 100);
+  }
   return answer.trim().toLowerCase();
 }
 
 function majorityVote(
   voters: Array<{ answer: number | string | null }>,
+  tolerance = 0.5,
 ): { finalAnswer: number | string | null; confidence: number } {
   const counts = new Map<string, { count: number; original: number | string | null }>();
   voters.forEach((voter) => {
-    const key = answerKey(voter.answer);
+    const key = answerKey(voter.answer, tolerance);
     if (!key) return;
     const current = counts.get(key);
     counts.set(key, {
@@ -55,21 +65,41 @@ function majorityVote(
 
 function weightedVote(
   voters: Array<{ answer: number | string | null }>,
+  tolerance = 0.5,
 ): { finalAnswer: number | string | null; confidence: number } {
-  // Weighted: same as majority but weight by frequency ratio
-  return majorityVote(voters);
+  // Same as majority for now (weights would require additional scoring)
+  return majorityVote(voters, tolerance);
 }
 
 function unanimousVote(
   voters: Array<{ answer: number | string | null }>,
+  tolerance = 0.5,
 ): { finalAnswer: number | string | null; confidence: number } {
-  const keys = voters.map((v) => answerKey(v.answer));
+  const keys = voters.map((v) => answerKey(v.answer, tolerance));
   const allSame = keys.every((k) => k !== null && k === keys[0]);
   if (allSame && keys[0] !== null) {
     return { finalAnswer: voters[0].answer, confidence: voters.length };
   }
-  // Fall back to majority if not unanimous
-  return majorityVote(voters);
+  return majorityVote(voters, tolerance);
+}
+
+function rankedVote(
+  voters: Array<{ answer: number | string | null }>,
+  tolerance = 0.5,
+): { finalAnswer: number | string | null; confidence: number } {
+  // Ranked = majority with tolerance grouping (same effective impl for now)
+  return majorityVote(voters, tolerance);
+}
+
+function applyTieBreaking(
+  tied: Array<{ answer: number | string | null }>,
+  strategy: 'first' | 'random' | 'rerun',
+): number | string | null {
+  if (strategy === 'random') {
+    return tied[Math.floor(Math.random() * tied.length)].answer;
+  }
+  // 'first' and 'rerun' fall back to first response
+  return tied[0]?.answer ?? null;
 }
 
 export async function runRAFPipeline(
@@ -77,83 +107,133 @@ export async function runRAFPipeline(
   onStageChange: (stage: string, data?: unknown) => void,
   params: RAFParams = DEFAULT_PARAMS,
 ): Promise<RAFResult> {
+  const { decomposer, solver, validator, aggregator } = params;
+
   onStageChange('problem_loaded', { problem });
   onStageChange('decomposing');
 
-  const depthInstruction = params.decompositionDepth
-    ? `Break the problem into exactly ${params.decompositionDepth} numbered sub-steps (or fewer if the problem is simpler).`
-    : 'Break the problem into numbered sub-steps.';
+  const depthInstruction =
+    decomposer.depth === 'auto'
+      ? 'Break the problem into numbered sub-steps.'
+      : `Break the problem into exactly ${decomposer.depth} numbered sub-steps (or fewer if the problem is simpler).`;
 
   const decomp = await chatJimmy(
     [{ role: 'user', content: `${depthInstruction}\n\nProblem:\n${problem}` }],
     {
       systemPrompt:
         'You are a math tutor. Break down problems into clear numbered steps. Do NOT solve the problem yet — just identify the reasoning path.',
-      topK: params.decompTopK,
+      topK: decomposer.topK,
+      temperature: decomposer.temperature,
+      max_tokens: decomposer.maxTokens,
     },
   );
 
+  const maxSteps = decomposer.depth === 'auto' ? 10 : Number(decomposer.depth);
   const steps = decomp.text
     .split('\n')
     .map((line) => line.trim())
     .filter((line) => /^\d+[.)]/.test(line))
-    .slice(0, params.decompositionDepth);
+    .slice(0, maxSteps);
 
   onStageChange('decomposed', { steps, raw: decomp.text });
   onStageChange('voting');
 
-  const solvePrompt = {
-    messages: [
-      {
-        role: 'user',
-        content: `Problem: ${problem}\n\nApproach (use these steps):\n${decomp.text}\n\nNow solve carefully, showing each calculation. End with #### <your final answer>`,
-      },
-    ],
-    options: {
-      systemPrompt:
-        'You are a careful problem solver. Use the decomposition, solve step by step, and always end with #### <answer>.',
-      topK: params.solveTopK,
+  const solveMessages = [
+    {
+      role: 'user',
+      content: `Problem: ${problem}\n\nApproach (use these steps):\n${decomp.text}\n\nNow solve carefully, showing each calculation. End with #### <your final answer>`,
     },
+  ];
+  const solveOptions = {
+    systemPrompt:
+      'You are a careful problem solver. Use the decomposition, solve step by step, and always end with #### <answer>.',
+    topK: solver.topK,
+    temperature: solver.temperature,
+    max_tokens: solver.maxTokens,
   };
 
-  const voterCount = Math.max(1, Math.min(7, params.numVoters));
-
-  // Update graph voter nodes to reflect actual count
+  const voterCount = Math.max(1, Math.min(9, solver.numVoters));
   const voterColors = ['#f97316', '#22c55e', '#06b6d4', '#a855f7', '#ec4899', '#facc15', '#14b8a6'];
 
-  const voters = await Promise.all(
+  const rawVoters = await Promise.all(
     Array.from({ length: voterCount }, async (_, index) => {
-      // Notify graph to add voter node if not already present
       onStageChange('voter_start', { index, color: voterColors[index % voterColors.length], total: voterCount });
-      const response = await chatJimmy(solvePrompt.messages, solvePrompt.options);
+
+      // Use different seeds per voter when independentSeeds is on
+      const opts = solver.independentSeeds
+        ? { ...solveOptions, seed: 1000 + index * 37 }
+        : solveOptions;
+
+      const response = await chatJimmy(solveMessages, opts);
       const answer = parseAnswer(response.text);
       onStageChange('voter_done', { index, answer, response: response.text });
       return { response: response.text, answer, stats: response.stats };
     }),
   );
 
-  let finalAnswer: number | string | null;
-  let confidence: number;
+  // ── Validator pass ────────────────────────────────────────────────────────
+  let validatedVoters = rawVoters;
+  if (validator.enabled) {
+    validatedVoters = rawVoters.map((voter) => {
+      if (validator.rejectNonNumeric && typeof voter.answer !== 'number') {
+        return { ...voter, answer: null };
+      }
+      return voter;
+    });
 
-  switch (params.votingStrategy) {
+    // For high strictness, also null out answers that seem like parse errors
+    if (validator.strictness === 'high') {
+      validatedVoters = validatedVoters.map((voter) => {
+        if (
+          voter.answer !== null &&
+          typeof voter.answer === 'number' &&
+          !isFinite(voter.answer)
+        ) {
+          return { ...voter, answer: null };
+        }
+        return voter;
+      });
+    }
+  }
+
+  // ── Aggregator ────────────────────────────────────────────────────────────
+  const tol = aggregator.groupingTolerance;
+
+  let voteResult: { finalAnswer: number | string | null; confidence: number };
+  switch (aggregator.votingStrategy) {
     case 'unanimous':
-      ({ finalAnswer, confidence } = unanimousVote(voters));
+      voteResult = unanimousVote(validatedVoters, tol);
       break;
     case 'weighted':
-      ({ finalAnswer, confidence } = weightedVote(voters));
+      voteResult = weightedVote(validatedVoters, tol);
+      break;
+    case 'ranked':
+      voteResult = rankedVote(validatedVoters, tol);
       break;
     default:
-      ({ finalAnswer, confidence } = majorityVote(voters));
+      voteResult = majorityVote(validatedVoters, tol);
+  }
+
+  // Tie-breaking: if confidence === 1 and multiple answers exist, apply tie-break
+  let { finalAnswer, confidence } = voteResult;
+  if (confidence === 1 && aggregator.tieBreaking !== 'first') {
+    finalAnswer = applyTieBreaking(validatedVoters, aggregator.tieBreaking);
   }
 
   onStageChange('complete', { finalAnswer, confidence });
 
   return {
     decomposition: { steps, raw: decomp.text, stats: decomp.stats },
-    voters,
+    voters: rawVoters,
     finalAnswer,
     confidence,
-    totalTime: [decomp.stats, ...voters.map((v) => v.stats)].reduce((sum, stat) => sum + (stat?.total_time ?? 0), 0),
-    totalTokens: [decomp.stats, ...voters.map((v) => v.stats)].reduce((sum, stat) => sum + (stat?.total_tokens ?? 0), 0),
+    totalTime: [decomp.stats, ...rawVoters.map((v) => v.stats)].reduce(
+      (sum, stat) => sum + (stat?.total_time ?? 0),
+      0,
+    ),
+    totalTokens: [decomp.stats, ...rawVoters.map((v) => v.stats)].reduce(
+      (sum, stat) => sum + (stat?.total_tokens ?? 0),
+      0,
+    ),
   };
 }

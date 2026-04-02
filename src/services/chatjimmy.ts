@@ -2,6 +2,9 @@ export interface ChatOptions {
   selectedModel: string;
   systemPrompt: string;
   topK: number;
+  temperature?: number;
+  max_tokens?: number;
+  seed?: number;
 }
 
 export interface InferenceStats {
