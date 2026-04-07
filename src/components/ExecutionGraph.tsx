@@ -4,10 +4,10 @@ import type { GraphNode, GraphEdge, GraphMode } from '../engine/types';
 
 const NC: Record<string, string> = {
   'raf-node': '#00e5ff', jury: '#e040fb', consortium: '#ffeb3b',
-  agent: '#69ff47', analysis: '#ff9100',
+  agent: '#69ff47', analysis: '#ff9100', recovery: '#f43f5e',
 };
 const NR: Record<string, number> = {
-  'raf-node': 20, jury: 15, consortium: 17, agent: 11, analysis: 15,
+  'raf-node': 20, jury: 15, consortium: 17, agent: 11, analysis: 15, recovery: 18,
 };
 
 interface Props {

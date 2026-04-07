@@ -1,4 +1,4 @@
-export type NodeType = 'raf-node' | 'jury' | 'consortium' | 'agent' | 'analysis';
+export type NodeType = 'raf-node' | 'jury' | 'consortium' | 'agent' | 'recovery';
 export type GraphMode = 'full' | 'simplified';
 
 export interface GraphNode {
@@ -28,7 +28,8 @@ export type ExecutionEvent =
   | { type: 'node_start'; nodeId: string; label: string; nodeType: NodeType; parentId?: string; rafNodeId?: string; edgeType?: 'flow' | 'parallel' | 'dependency' }
   | { type: 'node_done'; nodeId: string; success: boolean; summary?: string }
   | { type: 'raf_node_start'; rafNodeId: string; parentRafNodeId?: string; label: string; depth: number }
-  | { type: 'raf_node_done'; rafNodeId: string; success: boolean; summary?: string };
+  | { type: 'raf_node_done'; rafNodeId: string; success: boolean; summary?: string }
+  | { type: 'call_count'; count: number };
 
 export interface RAFParams {
   baseCaseJurySize: number;
@@ -38,24 +39,27 @@ export interface RAFParams {
   analysisJurySize: number;
   planConsortiumSize: number;
   planJurySize: number;
+  errorFinderJurySize: number;
+  recoveryConsortiumSize: number;
   minTopK: number;
   maxTopK: number;
-  maxDepth: number;
   extraContextLayer: boolean;
-  simulationMode: boolean;
 }
 
 export const DEFAULT_PARAMS: RAFParams = {
   baseCaseJurySize: 3,
-  baseCaseConsortiumSize: 2,
-  baseCaseDesignJurySize: 2,
-  analysisConsortiumSize: 2,
-  analysisJurySize: 2,
-  planConsortiumSize: 2,
-  planJurySize: 2,
-  minTopK: 2,
-  maxTopK: 8,
-  maxDepth: 1,
+  baseCaseConsortiumSize: 3,
+  baseCaseDesignJurySize: 3,
+  analysisConsortiumSize: 3,
+  analysisJurySize: 3,
+  planConsortiumSize: 3,
+  planJurySize: 3,
+  errorFinderJurySize: 3,
+  recoveryConsortiumSize: 3,
+  minTopK: 4,
+  maxTopK: 12,
   extraContextLayer: false,
-  simulationMode: true,
 };
+
+export const MAX_LLM_CALLS = 5000;
+export const MAX_RECURSION_DEPTH = 500;
