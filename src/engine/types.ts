@@ -9,6 +9,7 @@ export interface GraphNode {
   active: boolean;
   success?: boolean;
   rafNodeId?: string;
+  depth?: number;   // raf depth level — used to pin root node to center
   x?: number;
   y?: number;
   fx?: number | null;

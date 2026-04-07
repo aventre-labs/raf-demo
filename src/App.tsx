@@ -10,7 +10,7 @@ import { ExecutionGraph } from './components/ExecutionGraph';
 import { ParamPanel } from './components/ParamPanel';
 import { PROBLEMS, CATEGORIES, BENCHMARKS_META } from './data/benchmarks';
 import { runRAF, type RafResult } from './engine/raf-engine';
-import { LLMCallLimitError } from './services/chatjimmy';
+import { LLMCallLimitError, getCallCount } from './services/chatjimmy';
 import type { GraphNode, GraphEdge, GraphMode, ExecutionEvent, RAFParams } from './engine/types';
 import { DEFAULT_PARAMS, MAX_LLM_CALLS } from './engine/types';
 
@@ -89,6 +89,13 @@ export default function App() {
     const mkId = (id: string) => `${sid}::${id}`;
 
     if (ev.type === 'raf_node_start') {
+      // Seed initial position near the parent so D3 starts with good layout.
+      // Root (depth=0) gets no position — ExecutionGraph pins it to center via fx/fy.
+      const parentNode = ev.parentRafNodeId
+        ? nodesRef.current.find(n => n.id === mkId(ev.parentRafNodeId!))
+        : null;
+      const angle = Math.random() * Math.PI * 2;
+      const spread = 80 + ev.depth * 20;
       const node: GraphNode = {
         id: mkId(ev.rafNodeId),
         type: 'raf-node',
@@ -96,6 +103,11 @@ export default function App() {
         detail: `RafNode "${ev.label}" — depth ${ev.depth}`,
         active: true,
         rafNodeId: ev.rafNodeId,
+        depth: ev.depth,
+        ...(parentNode
+          ? { x: (parentNode.x ?? 0) + Math.cos(angle) * spread,
+              y: (parentNode.y ?? 0) + Math.sin(angle) * spread }
+          : {}),
       };
       nodesRef.current = [...nodesRef.current, node];
       if (ev.parentRafNodeId) {
@@ -120,6 +132,11 @@ export default function App() {
     }
 
     if (ev.type === 'node_start') {
+      // Seed position near parent node for immediate visual placement
+      const parentNode = ev.parentId
+        ? nodesRef.current.find(n => n.id === mkId(ev.parentId!))
+        : null;
+      const angle = Math.random() * Math.PI * 2;
       const node: GraphNode = {
         id: mkId(ev.nodeId),
         type: ev.nodeType,
@@ -127,6 +144,10 @@ export default function App() {
         detail: `${ev.nodeType}: ${ev.label}`,
         active: true,
         rafNodeId: ev.rafNodeId,
+        ...(parentNode
+          ? { x: (parentNode.x ?? 0) + Math.cos(angle) * 55,
+              y: (parentNode.y ?? 0) + Math.sin(angle) * 55 }
+          : {}),
       };
       nodesRef.current = [...nodesRef.current, node];
       if (ev.parentId) {
@@ -180,7 +201,8 @@ export default function App() {
       const result = await runRAF(problem, params, ev => handleEvent(ev, id));
       const finalNodes = [...nodesRef.current];
       const finalLinks = [...linksRef.current];
-      const finalCallCount = liveCallCount;
+      // Use getCallCount() — liveCallCount is stale in async closure
+      const finalCallCount = getCallCount();
 
       setSessions(prev => {
         const next = prev.map(s => s.id === id
@@ -197,7 +219,7 @@ export default function App() {
 
       setSessions(prev => {
         const next = prev.map(s => s.id === id
-          ? { ...s, error: errorMsg, nodes: [...nodesRef.current], links: [...linksRef.current], callCount: liveCallCount }
+          ? { ...s, error: errorMsg, nodes: [...nodesRef.current], links: [...linksRef.current], callCount: getCallCount() }
           : s
         );
         try { localStorage.setItem(LS_KEY, JSON.stringify(next.slice(0, 20))); } catch { /* ignore */ }
@@ -206,7 +228,7 @@ export default function App() {
     }
 
     setRunning(false);
-  }, [running, params, handleEvent, liveCallCount]);
+  }, [running, params, handleEvent]);
 
   // Restore graph when switching sessions
   useEffect(() => {
