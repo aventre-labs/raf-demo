@@ -1,211 +1,161 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import * as d3 from 'd3';
+import type { GraphNode, GraphEdge, GraphMode } from '../engine/types';
 
-export interface GraphNode extends d3.SimulationNodeDatum {
-  id: string;
-  label: string;
-  type: 'problem' | 'decompose' | 'step' | 'voter' | 'answer' | 'result';
-  color: string;
-  radius: number;
-  fullText?: string;
-  active?: boolean;
-}
-
-export interface GraphLink extends d3.SimulationLinkDatum<GraphNode> {
-  id: string;
-  source: string | GraphNode;
-  target: string | GraphNode;
-  color: string;
-  opacity?: number;
-}
+const NC: Record<string, string> = {
+  'raf-node': '#00e5ff', jury: '#e040fb', consortium: '#ffeb3b',
+  agent: '#69ff47', analysis: '#ff9100',
+};
+const NR: Record<string, number> = {
+  'raf-node': 20, jury: 15, consortium: 17, agent: 11, analysis: 15,
+};
 
 interface Props {
   nodes: GraphNode[];
-  links: GraphLink[];
+  links: GraphEdge[];
+  mode: GraphMode;
+  width: number;
+  height: number;
 }
 
-const WIDTH = 360;
-const HEIGHT = 760;
+export function ExecutionGraph({ nodes, links, mode, width, height }: Props) {
+  const svgRef = useRef<SVGSVGElement>(null);
+  const simRef = useRef<d3.Simulation<GraphNode, GraphEdge> | null>(null);
+  const zlRef = useRef<d3.Selection<SVGGElement, unknown, null, undefined> | null>(null);
+  const initRef = useRef(false);
+  const prevModeRef = useRef(mode);
 
-export function ExecutionGraph({ nodes, links }: Props) {
-  const svgRef = useRef<SVGSVGElement | null>(null);
-  const simulationRef = useRef<d3.Simulation<GraphNode, GraphLink> | null>(null);
-  const zoomLayerRef = useRef<SVGGElement | null>(null);
-  const initializedRef = useRef(false);
-
-  const graphData = useMemo(() => {
-    // D3 mutates link.source/target from strings to object refs. We must:
-    // 1. Always pass string IDs (deep-clone links)
-    // 2. Filter links referencing nodes not yet in the graph
-    const nodeIds = new Set(nodes.map((n) => n.id));
-    const safeLinks: GraphLink[] = [];
-    for (const l of links) {
-      const src = typeof l.source === 'string' ? l.source : (l.source as GraphNode).id;
-      const tgt = typeof l.target === 'string' ? l.target : (l.target as GraphNode).id;
-      if (nodeIds.has(src) && nodeIds.has(tgt)) {
-        safeLinks.push({ ...l, source: src, target: tgt });
-      }
-    }
-    return { nodes: nodes.map((n) => ({ ...n })), links: safeLinks };
-  }, [nodes, links]);
-
+  // Init SVG once
   useEffect(() => {
-    if (!svgRef.current || initializedRef.current) return;
+    if (!svgRef.current || initRef.current) return;
+    initRef.current = true;
 
     const svg = d3.select(svgRef.current);
     svg.selectAll('*').remove();
-    svg.attr('viewBox', `0 0 ${WIDTH} ${HEIGHT}`);
 
     const defs = svg.append('defs');
-    const glow = defs.append('filter').attr('id', 'result-glow');
-    glow.append('feGaussianBlur').attr('stdDeviation', '5').attr('result', 'coloredBlur');
-    const merge = glow.append('feMerge');
-    merge.append('feMergeNode').attr('in', 'coloredBlur');
-    merge.append('feMergeNode').attr('in', 'SourceGraphic');
+    const f = defs.append('filter').attr('id', 'glow');
+    f.append('feGaussianBlur').attr('stdDeviation', 3).attr('result', 'blur');
+    const fm = f.append('feMerge');
+    fm.append('feMergeNode').attr('in', 'blur');
+    fm.append('feMergeNode').attr('in', 'SourceGraphic');
 
-    const zoomLayer = svg.append('g').attr('class', 'zoom-layer');
-    zoomLayerRef.current = zoomLayer.node();
-    zoomLayer.append('g').attr('class', 'links');
-    zoomLayer.append('g').attr('class', 'nodes');
-
-    svg.call(
-      d3
-        .zoom<SVGSVGElement, unknown>()
-        .scaleExtent([0.5, 1.7])
-        .on('zoom', (event) => {
-          zoomLayer.attr('transform', event.transform);
-        }),
-    );
-
-    simulationRef.current = d3
-      .forceSimulation<GraphNode>(graphData.nodes)
-      .force('link', d3.forceLink<GraphNode, GraphLink>(graphData.links).id((d) => d.id).distance(90).strength(0.6))
-      .force('charge', d3.forceManyBody().strength(-260))
-      .force('center', d3.forceCenter(WIDTH / 2, HEIGHT / 2))
-      .force('collide', d3.forceCollide<GraphNode>().radius((d) => d.radius + 14))
-      .force('y', d3.forceY(HEIGHT / 2).strength(0.04));
-
-    initializedRef.current = true;
-  }, [graphData]);
-
-  useEffect(() => {
-    if (!svgRef.current || !simulationRef.current || !zoomLayerRef.current) return;
-
-    const svg = d3.select(svgRef.current);
-    const zoomLayer = d3.select(zoomLayerRef.current);
-    const linkGroup = zoomLayer.select<SVGGElement>('.links');
-    const nodeGroup = zoomLayer.select<SVGGElement>('.nodes');
-
-    const drag = d3
-      .drag<SVGGElement, GraphNode>()
-      .on('start', (event, d) => {
-        if (!event.active) simulationRef.current?.alphaTarget(0.3).restart();
-        d.fx = d.x;
-        d.fy = d.y;
-      })
-      .on('drag', (_event, d) => {
-        d.fx = _event.x;
-        d.fy = _event.y;
-      })
-      .on('end', (event, d) => {
-        if (!event.active) simulationRef.current?.alphaTarget(0);
-        d.fx = null;
-        d.fy = null;
-      });
-
-    const tooltip = svg
-      .selectAll<SVGTextElement, string>('.graph-tooltip')
-      .data([1])
-      .join('text')
-      .attr('class', 'graph-tooltip')
-      .attr('fill', '#f9fafb')
-      .attr('font-size', 11)
-      .attr('opacity', 0)
-      .attr('pointer-events', 'none');
-
-    const linkSelection = linkGroup.selectAll<SVGLineElement, GraphLink>('.graph-link').data(graphData.links, (d) => d.id);
-    linkSelection.exit().remove();
-    const linkEnter = linkSelection
-      .enter()
-      .append('line')
-      .attr('class', 'graph-link')
-      .attr('stroke-width', 2)
-      .attr('stroke-linecap', 'round');
-
-    const mergedLinks = linkEnter.merge(linkSelection).attr('stroke', (d) => d.color).attr('opacity', (d) => d.opacity ?? 0.6);
-
-    const nodeSelection = nodeGroup.selectAll<SVGGElement, GraphNode>('.graph-node').data(graphData.nodes, (d) => d.id);
-    nodeSelection.exit().remove();
-
-    const nodeEnter = nodeSelection
-      .enter()
-      .append('g')
-      .attr('class', (d) => `graph-node node-${d.type}`)
-      .style('cursor', 'grab')
-      .call(drag)
-      .on('mouseenter', function (_event, d) {
-        d3.select(this).select('circle').attr('stroke-width', 3);
-        tooltip.attr('opacity', 1).text(d.fullText ?? d.label);
-      })
-      .on('mousemove', function (event) {
-        const [x, y] = d3.pointer(event, svg.node());
-        tooltip.attr('x', x + 12).attr('y', y - 12);
-      })
-      .on('mouseleave', function () {
-        d3.select(this).select('circle').attr('stroke-width', 1.5);
-        tooltip.attr('opacity', 0);
-      });
-
-    nodeEnter
-      .append('circle')
-      .attr('r', 0)
-      .attr('fill', (d) => d.color)
-      .attr('stroke', 'rgba(255,255,255,0.25)')
-      .attr('stroke-width', 1.5)
-      .transition()
-      .duration(500)
-      .attr('r', (d) => d.radius);
-
-    nodeEnter
-      .append('text')
-      .attr('text-anchor', 'middle')
-      .attr('dy', 4)
-      .attr('fill', '#f9fafb')
-      .attr('font-size', (d) => (d.type === 'step' ? 10 : 11))
-      .attr('font-family', 'JetBrains Mono')
-      .text((d) => d.label.length > 12 ? `${d.label.slice(0, 11)}…` : d.label);
-
-    const mergedNodes = nodeEnter
-      .merge(nodeSelection)
-      .attr('class', (d) => `graph-node node-${d.type}${d.active ? ' active' : ''}`);
-
-    mergedNodes
-      .select('circle')
-      .attr('fill', (d) => d.color)
-      .attr('r', (d) => d.radius)
-      .attr('filter', (d) => (d.type === 'result' ? 'url(#result-glow)' : null));
-
-    // CRITICAL: update nodes FIRST, then links — D3 resolves link sources against node map
-    try {
-      simulationRef.current.nodes(graphData.nodes);
-      (simulationRef.current.force('link') as d3.ForceLink<GraphNode, GraphLink>).links(graphData.links);
-    } catch (e) {
-      // D3 may throw "node not found" on rapid graph updates — silently recover
-      console.warn('D3 graph update warning:', e);
-      return;
-    }
-    simulationRef.current.on('tick', () => {
-      mergedLinks
-        .attr('x1', (d) => (d.source as GraphNode).x ?? 0)
-        .attr('y1', (d) => (d.source as GraphNode).y ?? 0)
-        .attr('x2', (d) => (d.target as GraphNode).x ?? 0)
-        .attr('y2', (d) => (d.target as GraphNode).y ?? 0);
-
-      mergedNodes.attr('transform', (d) => `translate(${d.x ?? 0},${d.y ?? 0})`);
+    (['flow', 'parallel', 'dependency'] as const).forEach(t => {
+      const c = { flow: '#444', parallel: '#00cccc', dependency: '#e040fb' }[t];
+      defs.append('marker').attr('id', `arr-${t}`)
+        .attr('viewBox', '0 -5 10 10').attr('refX', 26).attr('refY', 0)
+        .attr('markerWidth', 5).attr('markerHeight', 5).attr('orient', 'auto')
+        .append('path').attr('d', 'M0,-5L10,0L0,5').attr('fill', c);
     });
 
-    simulationRef.current.alpha(0.35).restart();
-  }, [graphData]);
+    const zl = svg.append('g');
+    zlRef.current = zl;
 
-  return <svg ref={svgRef} className="h-full w-full rounded-[28px] bg-transparent" aria-label="RAF execution graph" />;
+    svg.call(d3.zoom<SVGSVGElement, unknown>()
+      .scaleExtent([0.15, 4])
+      .on('zoom', e => zl.attr('transform', e.transform.toString()))
+    );
+
+    zl.append('g').attr('class', 'edges');
+    zl.append('g').attr('class', 'nodes');
+    zl.append('g').attr('class', 'labels');
+
+    simRef.current = d3.forceSimulation<GraphNode>([])
+      .force('link', d3.forceLink<GraphNode, GraphEdge>([]).id(d => d.id).distance(75).strength(0.35))
+      .force('charge', d3.forceManyBody().strength(-180).distanceMax(280))
+      .force('center', d3.forceCenter(width / 2, height / 2))
+      .force('collide', d3.forceCollide<GraphNode>().radius(d => NR[d.type] + 12).strength(0.8))
+      .alphaDecay(0.028).velocityDecay(0.4);
+
+    simRef.current.on('tick', () => {
+      if (!zlRef.current) return;
+      const g = zlRef.current;
+      g.select('.edges').selectAll<SVGLineElement, GraphEdge>('line')
+        .attr('x1', d => (d.source as GraphNode).x ?? 0)
+        .attr('y1', d => (d.source as GraphNode).y ?? 0)
+        .attr('x2', d => (d.target as GraphNode).x ?? 0)
+        .attr('y2', d => (d.target as GraphNode).y ?? 0);
+      g.select('.nodes').selectAll<SVGGElement, GraphNode>('g.ngrp')
+        .attr('transform', d => `translate(${d.x ?? 0},${d.y ?? 0})`);
+      g.select('.labels').selectAll<SVGTextElement, GraphNode>('text')
+        .attr('x', d => d.x ?? 0)
+        .attr('y', d => (d.y ?? 0) + NR[d.type] + 12);
+    });
+  }, []); // eslint-disable-line
+
+  // Update graph data
+  useEffect(() => {
+    if (!simRef.current || !zlRef.current) return;
+    const sim = simRef.current;
+    const g = zlRef.current;
+    const modeChanged = prevModeRef.current !== mode;
+    prevModeRef.current = mode;
+
+    const vNodes = mode === 'full' ? nodes : nodes.filter(n => n.type === 'raf-node');
+    const vIds = new Set(vNodes.map(n => n.id));
+    const vLinks = mode === 'full' ? links : links.filter(l => {
+      const s = typeof l.source === 'string' ? l.source : (l.source as GraphNode).id;
+      const t = typeof l.target === 'string' ? l.target : (l.target as GraphNode).id;
+      return vIds.has(s) && vIds.has(t);
+    });
+
+    const eSel = g.select<SVGGElement>('.edges').selectAll<SVGLineElement, GraphEdge>('line')
+      .data(vLinks, d => d.id);
+    eSel.exit().transition().duration(250).attr('opacity', 0).remove();
+    const eEnter = eSel.enter().append('line').attr('opacity', 0).attr('stroke-linecap', 'round');
+    eEnter.merge(eSel).transition().duration(300).attr('opacity', 1)
+      .attr('stroke', d => d.edgeType === 'parallel' ? '#00cccc' : d.edgeType === 'dependency' ? '#e040fb' : '#444')
+      .attr('stroke-width', d => d.edgeType === 'dependency' ? 1.5 : 2)
+      .attr('stroke-dasharray', d => d.edgeType === 'parallel' ? '8 4' : d.edgeType === 'dependency' ? '3 3' : 'none')
+      .attr('marker-end', d => `url(#arr-${d.edgeType})`);
+
+    const nSel = g.select<SVGGElement>('.nodes').selectAll<SVGGElement, GraphNode>('g.ngrp')
+      .data(vNodes, d => d.id);
+    nSel.exit().transition().duration(200).attr('opacity', 0).remove();
+
+    const nEnter = nSel.enter().append('g').attr('class', d => `ngrp ngrp-${d.type}`)
+      .style('cursor', 'grab');
+    nEnter.append('circle').attr('r', 0).attr('filter', 'url(#glow)')
+      .attr('fill', d => NC[d.type] ?? '#888').attr('stroke', 'rgba(255,255,255,0.2)').attr('stroke-width', 1.5)
+      .transition().duration(400).attr('r', d => NR[d.type]);
+
+    const nMerge = nEnter.merge(nSel);
+    nMerge.attr('class', d => `ngrp ngrp-${d.type}${d.active ? ' raf-node-active' : ''}`);
+    nMerge.select('circle')
+      .attr('fill', d => NC[d.type] ?? '#888')
+      .attr('opacity', d => d.active ? 1 : 0.75);
+
+    nMerge.on('mouseenter', function(_event, d) {
+      d3.select(this).select('circle').transition().duration(100).attr('r', NR[d.type] * 1.35);
+      d3.select(this).select('title').remove();
+      d3.select(this).append('title').text(`${d.label}\n${d.detail}`);
+    }).on('mouseleave', function(_event, d) {
+      d3.select(this).select('circle').transition().duration(100).attr('r', NR[d.type]);
+    });
+
+    const drag = d3.drag<SVGGElement, GraphNode>()
+      .on('start', (e, d) => { if (!e.active) sim.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
+      .on('drag', (e, d) => { d.fx = e.x; d.fy = e.y; })
+      .on('end', (e, d) => { if (!e.active) sim.alphaTarget(0); d.fx = null; d.fy = null; });
+    nMerge.call(drag);
+
+    const lSel = g.select<SVGGElement>('.labels').selectAll<SVGTextElement, GraphNode>('text')
+      .data(vNodes, d => d.id);
+    lSel.exit().remove();
+    lSel.enter().append('text').attr('text-anchor', 'middle').attr('font-size', 9)
+      .attr('fill', '#888').attr('pointer-events', 'none').merge(lSel)
+      .text(d => d.label.length > 16 ? d.label.slice(0, 15) + '…' : d.label);
+
+    (sim.force('link') as d3.ForceLink<GraphNode, GraphEdge>).links(vLinks);
+    sim.nodes(vNodes);
+    sim.alpha(modeChanged ? 0.6 : 0.3).restart();
+  }, [nodes, links, mode, width, height]);
+
+  useEffect(() => () => {
+    simRef.current?.stop();
+    simRef.current = null;
+    initRef.current = false;
+  }, []);
+
+  return <svg ref={svgRef} style={{ width: '100%', height: '100%', background: 'hsl(222 47% 3%)' }} />;
 }

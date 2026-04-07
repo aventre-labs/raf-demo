@@ -1,638 +1,357 @@
-import { Component, type ErrorInfo, type ReactNode, useEffect, useMemo, useState } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
-import {
-  ArrowRight,
-  BarChart3,
-  Brain,
-  ChevronDown,
-  ChevronRight,
-  FileText,
-  FlaskConical,
-  Menu,
-  Plus,
-  Sparkles,
-  TimerReset,
-  Trophy,
-  X,
-} from 'lucide-react';
-import { benchmarkCategories, type BenchmarkProblem } from './data/benchmarks';
-import { ExecutionGraph, type GraphLink, type GraphNode } from './components/ExecutionGraph';
-import { runRAFPipeline, type RAFResult } from './services/raf-pipeline';
-import ParameterPanel, { DEFAULT_PARAMS, type RAFParams } from './components/ParameterPanel';
+import { useState, useCallback, useRef, useEffect } from 'react';
+import { motion } from 'framer-motion';
+import { Plus, Zap, Layers, Network, BarChart3 } from 'lucide-react';
+import { Button } from './components/ui/button';
+import { Badge } from './components/ui/badge';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from './components/ui/tabs';
+import { Switch } from './components/ui/switch';
+import { ScrollArea } from './components/ui/scroll-area';
+import { Separator } from './components/ui/separator';
+import { ExecutionGraph } from './components/ExecutionGraph';
+import { ParamPanel } from './components/ParamPanel';
+import { PROBLEMS, CATEGORIES } from './data/benchmarks';
+import { runRAF, type RafResult } from './engine/raf-engine';
+import type { GraphNode, GraphEdge, GraphMode, ExecutionEvent, RAFParams } from './engine/types';
+import { DEFAULT_PARAMS } from './engine/types';
 
-interface SessionRecord {
-  id: string;
-  name: string;
-  timestamp: number;
-  problem: string;
-  benchmarkId?: string;
-  result?: RAFResult;
-  graph: { nodes: GraphNode[]; links: GraphLink[] };
+interface Session {
+  id: string; name: string; ts: number; problem: string;
+  result: RafResult | null; nodes: GraphNode[]; links: GraphEdge[];
 }
 
-// Error boundary for D3 graph crashes — prevents blank page
-class GraphErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
-  state = { hasError: false };
-  static getDerivedStateFromError() { return { hasError: true }; }
-  componentDidCatch(error: Error, info: ErrorInfo) { console.warn('Graph error caught:', error, info); }
-  componentDidUpdate(prevProps: { children: ReactNode }) {
-    if (prevProps.children !== this.props.children && this.state.hasError) {
-      this.setState({ hasError: false });
-    }
-  }
-  render() {
-    if (this.state.hasError) {
-      return <div className="flex h-full items-center justify-center text-xs text-[#6b7280]">Graph rendering…</div>;
-    }
-    return this.props.children;
-  }
-}
+function uid() { return `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`; }
+function short(s: string, n = 36) { return s.length > n ? s.slice(0, n) + '…' : s; }
+function hhmm(ts: number) { return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
 
-const STORAGE_KEY = 'raf-demo-sessions';
-const ease = [0.25, 0.46, 0.45, 0.94] as const;
-
-function uid() {
-  return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-}
-
-function formatTime(ts: number) {
-  return new Date(ts).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
-}
-
-function short(text: string, len = 72) {
-  return text.length > len ? `${text.slice(0, len)}…` : text;
-}
-
-function buildInitialGraph(problem?: string): { nodes: GraphNode[]; links: GraphLink[] } {
-  if (!problem) return { nodes: [], links: [] };
-  return {
-    nodes: [
-      {
-        id: 'problem',
-        label: 'Problem',
-        type: 'problem',
-        color: '#3b82f6',
-        radius: 30,
-        fullText: problem,
-        active: true,
-      },
-    ],
-    links: [],
-  };
-}
-
-function answerMatches(actual: number | string | null | undefined, expected: number | string | undefined) {
-  if (actual == null || expected == null) return false;
-  if (typeof actual === 'number' && typeof expected === 'number') return Math.abs(actual - expected) < 0.5;
-  return String(actual).trim().toLowerCase() === String(expected).trim().toLowerCase();
-}
+const LS_KEY = 'raf-demo-sessions-v2';
 
 export default function App() {
-  const [sessions, setSessions] = useState<SessionRecord[]>([]);
-  const [activeSessionId, setActiveSessionId] = useState<string>('');
-  const [mode, setMode] = useState<'custom' | 'benchmarks'>('custom');
-  const [customPrompt, setCustomPrompt] = useState('');
-  const [selectedCategoryId, setSelectedCategoryId] = useState<string>(benchmarkCategories[0].id);
+  const [sessions, setSessions] = useState<Session[]>(() => {
+    try { return JSON.parse(localStorage.getItem(LS_KEY) ?? '[]'); } catch { return []; }
+  });
+  const [activeId, setActiveId] = useState(() => {
+    try { const s = JSON.parse(localStorage.getItem(LS_KEY) ?? '[]'); return (s[0] as Session | undefined)?.id ?? ''; } catch { return ''; }
+  });
   const [params, setParams] = useState<RAFParams>({ ...DEFAULT_PARAMS });
   const [running, setRunning] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [expandedVoters, setExpandedVoters] = useState<number[]>([0]);
-  const [isDesktop, setIsDesktop] = useState(false);
+  const [graphMode, setGraphMode] = useState<GraphMode>('full');
+  const [customPrompt, setCustomPrompt] = useState('');
+  const [selCat, setSelCat] = useState(CATEGORIES[0]);
+  const [sidebarView, setSidebarView] = useState<'sessions' | 'params'>('sessions');
 
+  const nodesRef = useRef<GraphNode[]>([]);
+  const linksRef = useRef<GraphEdge[]>([]);
+  const [graphNodes, setGraphNodes] = useState<GraphNode[]>([]);
+  const [graphLinks, setGraphLinks] = useState<GraphEdge[]>([]);
+
+  const graphRef = useRef<HTMLDivElement>(null);
+  const [gSize, setGSize] = useState({ w: 600, h: 700 });
   useEffect(() => {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return;
-    try {
-      const parsed = JSON.parse(raw) as SessionRecord[];
-      setSessions(parsed);
-      if (parsed[0]) setActiveSessionId(parsed[0].id);
-    } catch {
-      // noop
+    const upd = () => {
+      if (graphRef.current) {
+        const r = graphRef.current.getBoundingClientRect();
+        if (r.width > 0) setGSize({ w: r.width, h: r.height });
+      }
+    };
+    upd();
+    const obs = new ResizeObserver(upd);
+    if (graphRef.current) obs.observe(graphRef.current);
+    return () => obs.disconnect();
+  }, []);
+
+  const persist = useCallback((next: Session[]) => {
+    setSessions(next);
+    try { localStorage.setItem(LS_KEY, JSON.stringify(next.slice(0, 20))); } catch { /* ignore */ }
+  }, []);
+
+  const activeSession = sessions.find(s => s.id === activeId) ?? null;
+
+  const handleEvent = useCallback((ev: ExecutionEvent, sid: string) => {
+    const mkId = (id: string) => `${sid}::${id}`;
+
+    if (ev.type === 'raf_node_start') {
+      const node: GraphNode = {
+        id: mkId(ev.rafNodeId), type: 'raf-node',
+        label: ev.label === 'root' ? 'Problem' : ev.label,
+        detail: `RafNode "${ev.label}" — depth ${ev.depth}`,
+        active: true, rafNodeId: ev.rafNodeId,
+      };
+      nodesRef.current = [...nodesRef.current, node];
+      if (ev.parentRafNodeId) {
+        linksRef.current = [...linksRef.current, {
+          id: `${mkId(ev.parentRafNodeId)}->${mkId(ev.rafNodeId)}`,
+          source: mkId(ev.parentRafNodeId), target: mkId(ev.rafNodeId), edgeType: 'parallel',
+        }];
+      }
+      setGraphNodes([...nodesRef.current]);
+      setGraphLinks([...linksRef.current]);
+      return;
+    }
+
+    if (ev.type === 'raf_node_done') {
+      nodesRef.current = nodesRef.current.map(n =>
+        n.id === mkId(ev.rafNodeId) ? { ...n, active: false, success: ev.success } : n
+      );
+      setGraphNodes([...nodesRef.current]);
+      return;
+    }
+
+    if (ev.type === 'node_start') {
+      const node: GraphNode = {
+        id: mkId(ev.nodeId), type: ev.nodeType,
+        label: ev.label, detail: `${ev.nodeType}: ${ev.label}`,
+        active: true, rafNodeId: ev.rafNodeId,
+      };
+      nodesRef.current = [...nodesRef.current, node];
+      if (ev.parentId) {
+        linksRef.current = [...linksRef.current, {
+          id: `${mkId(ev.parentId)}->${mkId(ev.nodeId)}`,
+          source: mkId(ev.parentId), target: mkId(ev.nodeId),
+          edgeType: ev.edgeType ?? 'flow',
+        }];
+      }
+      setGraphNodes([...nodesRef.current]);
+      setGraphLinks([...linksRef.current]);
+      return;
+    }
+
+    if (ev.type === 'node_done') {
+      nodesRef.current = nodesRef.current.map(n =>
+        n.id === mkId(ev.nodeId) ? { ...n, active: false, success: ev.success } : n
+      );
+      setGraphNodes([...nodesRef.current]);
     }
   }, []);
 
-  useEffect(() => {
-    const update = () => setIsDesktop(window.innerWidth >= 1024);
-    update();
-    window.addEventListener('resize', update);
-    return () => window.removeEventListener('resize', update);
-  }, []);
+  const launchRun = useCallback(async (problem: string) => {
+    if (!problem.trim() || running) return;
+    const id = uid();
+    const session: Session = { id, name: short(problem, 32), ts: Date.now(), problem, result: null, nodes: [], links: [] };
 
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions));
-  }, [sessions]);
-
-  const activeSession = useMemo(() => sessions.find((session) => session.id === activeSessionId) ?? null, [sessions, activeSessionId]);
-  const selectedCategory = useMemo(
-    () => benchmarkCategories.find((category) => category.id === selectedCategoryId) ?? benchmarkCategories[0],
-    [selectedCategoryId],
-  );
-
-  const aggregateStats = useMemo(() => {
-    const result = activeSession?.result;
-    if (!result) return null;
-    const allStats = [result.decomposition.stats, ...result.voters.map((v) => v.stats)].filter(Boolean);
-    const avgDecodeRate = allStats.length
-      ? allStats.reduce((sum, stat) => sum + (stat?.decode_rate ?? 0), 0) / allStats.length
-      : 0;
-    const avgTtft = allStats.length ? allStats.reduce((sum, stat) => sum + (stat?.ttft ?? 0), 0) / allStats.length : 0;
-    return {
-      decodeRate: avgDecodeRate,
-      ttft: avgTtft,
-      totalTime: result.totalTime,
-      totalTokens: result.totalTokens,
-    };
-  }, [activeSession]);
-
-  function persistSession(partial: SessionRecord) {
-    setSessions((current) => {
-      const next = [partial, ...current.filter((item) => item.id !== partial.id)];
-      return next.slice(0, 12);
-    });
-    setActiveSessionId(partial.id);
-  }
-
-  function createBlankSession() {
-    const fresh: SessionRecord = {
-      id: uid(),
-      name: 'New session',
-      timestamp: Date.now(),
-      problem: '',
-      graph: { nodes: [], links: [] },
-    };
-    persistSession(fresh);
-    setCustomPrompt('');
-    setExpandedVoters([0]);
-  }
-
-  useEffect(() => {
-    if (!sessions.length) createBlankSession();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const voterColors = ['#f97316', '#22c55e', '#06b6d4', '#a855f7', '#ec4899', '#facc15', '#14b8a6'];
-
-  async function launchRun(problem: string, benchmark?: BenchmarkProblem) {
-    if (!problem.trim()) return;
+    nodesRef.current = [];
+    linksRef.current = [];
+    setGraphNodes([]);
+    setGraphLinks([]);
+    setActiveId(id);
+    persist([session, ...sessions]);
     setRunning(true);
-    setExpandedVoters([0]);
 
-    const session: SessionRecord = {
-      id: activeSession?.id ?? uid(),
-      name: benchmark ? `${selectedCategory.name} · ${benchmark.id.toUpperCase()}` : short(problem, 26),
-      timestamp: Date.now(),
-      problem,
-      benchmarkId: benchmark?.id,
-      graph: buildInitialGraph(problem),
-      result: undefined,
-    };
-    persistSession(session);
-
-    const stageGraph = buildInitialGraph(problem);
-
-    const updateGraph = (nodes: GraphNode[], links: GraphLink[]) => {
-      stageGraph.nodes = nodes;
-      stageGraph.links = links;
-      persistSession({ ...session, graph: { nodes: [...nodes], links: [...links] } });
-    };
-
-    const result = await runRAFPipeline(problem, (stage, data) => {
-      const baseNodes = [...stageGraph.nodes];
-      const baseLinks = [...stageGraph.links];
-
-      if (stage === 'decomposing' && !baseNodes.find((n) => n.id === 'decompose')) {
-        baseNodes.push({ id: 'decompose', label: 'Decompose', type: 'decompose', color: '#8b5cf6', radius: 24, active: true });
-        baseLinks.push({ id: 'l-problem-decompose', source: 'problem', target: 'decompose', color: '#8b5cf6', opacity: 0.8 });
-      }
-
-      if (stage === 'decomposed') {
-        const steps = (data as { steps: string[] }).steps;
-        const nextNodes = baseNodes.map((node) => ({ ...node, active: node.id === 'decompose' }));
-        const nextLinks = [...baseLinks];
-        steps.slice(0, 5).forEach((step, index) => {
-          const id = `step-${index}`;
-          if (!nextNodes.find((n) => n.id === id)) {
-            nextNodes.push({ id, label: `S${index + 1}`, fullText: step, type: 'step', color: '#6366f1', radius: 16, active: false });
-            nextLinks.push({ id: `l-decompose-${id}`, source: 'decompose', target: id, color: '#6366f1', opacity: 0.7 });
-          }
-        });
-        updateGraph(nextNodes, nextLinks);
-        return;
-      }
-
-      if (stage === 'voter_start') {
-        const { index, color, total } = data as { index: number; color: string; total: number };
-        const nextNodes = baseNodes.map((node) => ({ ...node, active: false }));
-        const nextLinks = [...baseLinks];
-        if (index === 0) {
-          Array.from({ length: total }, (_, i) => {
-            const c = voterColors[i % voterColors.length];
-            const id = `voter-${i}`;
-            if (!nextNodes.find((n) => n.id === id)) {
-              nextNodes.push({ id, label: `V${i + 1}`, type: 'voter', color: c, radius: 22, active: i === 0 });
-              nextLinks.push({ id: `l-decompose-${id}`, source: 'decompose', target: id, color: c, opacity: 0.85 });
-            }
-          });
-        } else {
-          const activeId = `voter-${index}`;
-          const idx = nextNodes.findIndex((n) => n.id === activeId);
-          if (idx >= 0) nextNodes[idx] = { ...nextNodes[idx], active: true };
-        }
-        updateGraph(nextNodes, nextLinks);
-        return;
-      }
-
-      if (stage === 'voting') return;
-
-      if (stage === 'voter_done') {
-        const { index, answer } = data as { index: number; answer: number | string | null };
-        const nextNodes = baseNodes.map((node) => ({ ...node, active: node.id === `voter-${index}` }));
-        const nextLinks = [...baseLinks];
-        const id = `answer-${index}`;
-        if (!nextNodes.find((n) => n.id === id)) {
-          nextNodes.push({ id, label: String(answer ?? '?'), fullText: String(answer ?? 'No parse'), type: 'answer', color: '#f59e0b', radius: 18, active: false });
-          nextLinks.push({ id: `l-voter-answer-${index}`, source: `voter-${index}`, target: id, color: '#f59e0b', opacity: 0.85 });
-        }
-        updateGraph(nextNodes, nextLinks);
-        return;
-      }
-
-      if (stage === 'complete') {
-        const { finalAnswer } = data as { finalAnswer: number | string | null };
-        const nextNodes = baseNodes.map((node) => ({ ...node, active: false }));
-        const nextLinks = [...baseLinks];
-        if (!nextNodes.find((n) => n.id === 'result')) {
-          nextNodes.push({ id: 'result', label: String(finalAnswer ?? '?'), fullText: `Majority vote: ${String(finalAnswer ?? '?')}`, type: 'result', color: '#10b981', radius: 32, active: true });
-        }
-        nextNodes
-          .filter((n) => n.type === 'answer' && String(n.fullText) === String(finalAnswer))
-          .forEach((answerNode) => {
-            if (!nextLinks.find((link) => link.id === `l-${answerNode.id}-result`)) {
-              nextLinks.push({ id: `l-${answerNode.id}-result`, source: answerNode.id, target: 'result', color: '#10b981', opacity: 0.95 });
-            }
-          });
-        updateGraph(nextNodes, nextLinks);
-      }
-    }, params);
-
-    persistSession({ ...session, graph: { ...stageGraph }, result, timestamp: Date.now() });
+    try {
+      const result = await runRAF(problem, params, ev => handleEvent(ev, id));
+      const finalNodes = [...nodesRef.current];
+      const finalLinks = [...linksRef.current];
+      setSessions(prev => {
+        const next = prev.map(s => s.id === id ? { ...s, result, nodes: finalNodes, links: finalLinks } : s);
+        try { localStorage.setItem(LS_KEY, JSON.stringify(next.slice(0, 20))); } catch { /* ignore */ }
+        return next;
+      });
+    } catch (e) {
+      console.error('RAF error:', e);
+    }
     setRunning(false);
-  }
+  }, [running, sessions, params, handleEvent, persist]);
 
-  const benchmarkOutcome = activeSession?.benchmarkId
-    ? benchmarkCategories.flatMap((category) => category.problems).find((problem) => problem.id === activeSession.benchmarkId)
-    : undefined;
+  // Restore graph when switching sessions
+  useEffect(() => {
+    if (!activeSession) { setGraphNodes([]); setGraphLinks([]); return; }
+    nodesRef.current = activeSession.nodes;
+    linksRef.current = activeSession.links;
+    setGraphNodes([...activeSession.nodes]);
+    setGraphLinks([...activeSession.links]);
+  }, [activeId]); // eslint-disable-line
 
-  /* ─────────────────────────────── RENDER ─────────────────────────────── */
+  const legend = [
+    { c: '#00e5ff', l: 'RafNode' }, { c: '#e040fb', l: 'Jury' },
+    { c: '#ffeb3b', l: 'Consortium' }, { c: '#69ff47', l: 'Agent' }, { c: '#ff9100', l: 'Analysis' },
+  ];
 
   return (
-    <div className="relative h-screen overflow-hidden bg-[#0a0f1a] text-[#f9fafb]">
-      {/* Background effects */}
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(59,130,246,0.14),transparent_28%),radial-gradient(circle_at_80%_0%,rgba(139,92,246,0.18),transparent_30%),radial-gradient(circle_at_70%_100%,rgba(16,185,129,0.12),transparent_30%)]" />
-      <div className="pointer-events-none absolute inset-0 opacity-[0.045] [background-image:radial-gradient(#fff_1px,transparent_1px)] [background-size:18px_18px]" />
+    <div className="flex h-screen overflow-hidden bg-background text-foreground text-sm">
 
-      {/* ── Mobile header ────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between border-b border-white/6 px-4 py-3 lg:hidden relative z-10">
-        <button onClick={() => setSidebarOpen(true)} className="rounded-xl border border-white/10 p-2 text-white">
-          <Menu className="h-5 w-5" />
-        </button>
-        <div className="font-['Space_Grotesk'] text-lg font-semibold">RAF Demo</div>
-        <button onClick={() => setSidebarOpen(false)} className="rounded-xl border border-white/10 p-2 text-white">
-          <X className="h-5 w-5" />
-        </button>
-      </div>
-
-      {/* ── Main 3-column layout: Sidebar | Config Panel | Results Panel ── */}
-      <div className="relative flex h-full flex-col lg:grid lg:grid-cols-[260px_380px_minmax(0,1fr)]">
-
-        {/* ═══════════════════════ COLUMN 1: SIDEBAR ═══════════════════════ */}
-        <AnimatePresence>
-          {(sidebarOpen || isDesktop) && (
-            <motion.aside
-              initial={{ x: -24, opacity: 0 }}
-              animate={{ x: 0, opacity: 1 }}
-              exit={{ x: -24, opacity: 0 }}
-              transition={{ duration: 0.35, ease }}
-              className="absolute inset-y-0 left-0 z-30 w-[280px] border-r border-white/6 bg-[#0f1726]/95 p-4 backdrop-blur-xl lg:static lg:w-auto"
-            >
-              <div className="flex h-full flex-col gap-4">
-                <div className="rounded-[24px] border border-white/8 bg-white/4 p-4 shadow-[0_24px_80px_rgba(0,0,0,0.28)]">
-                  <div className="mb-3 flex items-center justify-between">
-                    <div>
-                      <div className="text-[11px] uppercase tracking-[0.24em] text-[#9ca3af]">Recursive Agent Framework</div>
-                      <h1 className="mt-1 font-['Space_Grotesk'] text-2xl font-semibold">RAF Demo</h1>
-                    </div>
-                    <Sparkles className="h-5 w-5 text-[#f59e0b]" />
-                  </div>
-                  <motion.button
-                    whileHover={{ y: -2 }}
-                    whileTap={{ scale: 0.98 }}
-                    transition={{ duration: 0.16 }}
-                    onClick={createBlankSession}
-                    className="flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[#3b82f6] to-[#8b5cf6] px-4 py-3 font-medium text-white shadow-[0_12px_32px_rgba(59,130,246,0.35)]"
-                  >
-                    <Plus className="h-4 w-4" />
-                    New session
-                  </motion.button>
-                </div>
-
-                <div className="min-h-0 flex-1 overflow-y-auto rounded-[24px] border border-white/8 bg-[#111827]/88 p-3">
-                  <div className="mb-3 flex items-center justify-between px-2">
-                    <span className="text-xs uppercase tracking-[0.2em] text-[#9ca3af]">Past sessions</span>
-                    <span className="text-xs text-[#6b7280]">{sessions.length}</span>
-                  </div>
-                  <div className="space-y-2">
-                    {sessions.map((session) => {
-                      const isActive = session.id === activeSessionId;
-                      const passed = answerMatches(session.result?.finalAnswer, benchmarkCategories.flatMap((c) => c.problems).find((p) => p.id === session.benchmarkId)?.expectedAnswer);
-                      return (
-                        <motion.button
-                          key={session.id}
-                          whileHover={{ y: -2 }}
-                          onClick={() => {
-                            setActiveSessionId(session.id);
-                            setCustomPrompt(session.problem);
-                            setSidebarOpen(false);
-                          }}
-                          className={`w-full rounded-2xl border p-3 text-left ${isActive ? 'border-[#3b82f6]/60 bg-[#1f2937] shadow-[0_12px_40px_rgba(59,130,246,0.16)]' : 'border-white/6 bg-white/[0.03]'}`}
-                        >
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0">
-                              <div className="truncate font-medium">{session.name}</div>
-                              <div className="mt-1 text-xs text-[#9ca3af]">{formatTime(session.timestamp)}</div>
-                            </div>
-                            <div className={`mt-0.5 h-2.5 w-2.5 rounded-full ${session.result ? (session.benchmarkId ? (passed ? 'bg-[#10b981]' : 'bg-[#f43f5e]') : 'bg-[#3b82f6]') : 'bg-white/20'}`} />
-                          </div>
-                          <p className="mt-2 text-sm leading-5 text-[#9ca3af]">{session.problem ? short(session.problem, 82) : 'No prompt yet.'}</p>
-                        </motion.button>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-            </motion.aside>
-          )}
-        </AnimatePresence>
-
-        {/* ═══════════════════ COLUMN 2: CONFIGURATION PANEL ═══════════════════ */}
-        <div className="border-r border-white/6 overflow-y-auto p-4 lg:p-5 space-y-4">
-          {/* Header badge */}
-          <div className="flex items-center gap-2 text-xs uppercase tracking-[0.28em] text-[#9ca3af]">
-            <Brain className="h-4 w-4 text-[#8b5cf6]" />
-            Configuration
+      {/* ── SIDEBAR ─────────────────────────────────────────────── */}
+      <div className="flex flex-col w-60 border-r border-border bg-card shrink-0">
+        <div className="px-4 py-3 border-b border-border">
+          <div className="flex items-center gap-2">
+            <Zap className="h-4 w-4 text-primary" />
+            <span className="font-semibold">RAF Demo</span>
           </div>
+          <p className="text-xs text-muted-foreground mt-0.5">Recursive Agent Framework</p>
+        </div>
 
-          {/* Mode selector */}
-          <div className="flex items-center gap-2 rounded-2xl bg-white/[0.04] p-1">
-            {[
-              { id: 'custom', label: 'Custom', icon: FlaskConical },
-              { id: 'benchmarks', label: 'Benchmarks', icon: Trophy },
-            ].map((tab) => {
-              const Icon = tab.icon;
-              const active = mode === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => setMode(tab.id as 'custom' | 'benchmarks')}
-                  className={`flex-1 rounded-[14px] px-3 py-2.5 text-sm font-medium transition-all ${active ? 'bg-white text-[#0a0f1a]' : 'text-[#9ca3af]'}`}
-                >
-                  <span className="flex items-center justify-center gap-2"><Icon className="h-4 w-4" />{tab.label}</span>
-                </button>
-              );
-            })}
-          </div>
+        <div className="flex border-b border-border text-xs">
+          {(['sessions', 'params'] as const).map(v => (
+            <button key={v} onClick={() => setSidebarView(v)}
+              className={`flex-1 py-2 capitalize font-medium transition-colors ${sidebarView === v ? 'text-primary border-b-2 border-primary' : 'text-muted-foreground hover:text-foreground'}`}>
+              {v}
+            </button>
+          ))}
+        </div>
 
-          {/* Input area (custom mode) or benchmark selector */}
-          {mode === 'custom' ? (
-            <div className="rounded-[20px] border border-white/8 bg-[#0d1524] p-4">
-              <label className="mb-2 block text-xs font-medium uppercase tracking-[0.16em] text-[#9ca3af]">Problem</label>
-              <textarea
-                value={customPrompt}
-                onChange={(event) => setCustomPrompt(event.target.value)}
-                placeholder="e.g. A merchant wants to make a choice of purchase between 2 purchase plans..."
-                className="h-28 w-full resize-none rounded-xl border border-white/8 bg-[#0a0f1a] px-3 py-2.5 text-sm leading-6 text-white outline-none ring-0 placeholder:text-[#6b7280] focus:border-[#3b82f6]/70"
-              />
+        {sidebarView === 'sessions' ? (
+          <>
+            <div className="px-3 py-2 border-b border-border">
+              <Button size="sm" className="w-full gap-1 text-xs" disabled={running}
+                onClick={() => { setCustomPrompt(''); setActiveId(''); setGraphNodes([]); setGraphLinks([]); }}>
+                <Plus className="h-3.5 w-3.5" /> New Session
+              </Button>
             </div>
-          ) : (
-            <div className="space-y-3">
-              {/* Category pills */}
-              <div className="flex flex-wrap gap-2">
-                {benchmarkCategories.map((category) => (
-                  <button
-                    key={category.id}
-                    onClick={() => setSelectedCategoryId(category.id)}
-                    className={`rounded-xl px-3 py-1.5 text-xs font-medium transition-all ${selectedCategoryId === category.id ? 'bg-white/10 text-white border border-white/20' : 'text-[#9ca3af] border border-white/6'}`}
-                  >
-                    {category.icon} {category.name}
+            <ScrollArea className="flex-1">
+              <div className="p-2 space-y-1">
+                {sessions.length === 0 && (
+                  <p className="text-xs text-center text-muted-foreground py-8 px-4">Run a problem to create a session</p>
+                )}
+                {sessions.map(s => (
+                  <button key={s.id} onClick={() => setActiveId(s.id)}
+                    className={`w-full text-left px-3 py-2 rounded-md transition-colors ${s.id === activeId ? 'bg-accent text-accent-foreground' : 'hover:bg-accent/40 text-muted-foreground'}`}>
+                    <div className="flex items-center gap-1.5 mb-0.5">
+                      <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${s.result?.success ? 'bg-green-500' : s.result ? 'bg-red-500' : 'bg-muted-foreground'}`} />
+                      <span className="text-xs font-medium text-foreground truncate">{s.name}</span>
+                      <span className="ml-auto text-[10px] text-muted-foreground shrink-0">{hhmm(s.ts)}</span>
+                    </div>
+                    <div className="text-[10px] text-muted-foreground pl-3">{s.nodes.length} nodes</div>
                   </button>
                 ))}
               </div>
-              {/* Problem list */}
-              <div className="max-h-[200px] space-y-2 overflow-y-auto pr-1 rounded-[20px] border border-white/8 bg-[#0d1524] p-3">
-                {selectedCategory.problems.map((problem) => (
-                  <motion.button
-                    key={problem.id}
-                    whileHover={{ y: -1 }}
-                    onClick={() => launchRun(problem.question, problem)}
-                    className="w-full rounded-xl border border-white/6 bg-white/[0.03] p-3 text-left"
-                  >
-                    <div className="mb-1 flex items-center justify-between gap-2">
-                      <span className="text-[10px] uppercase tracking-[0.18em] text-[#9ca3af]">{problem.id.toUpperCase()}</span>
-                      <span className="text-[10px] text-[#6b7280]">→ {String(problem.expectedAnswer).slice(0, 12)}</span>
-                    </div>
-                    <p className="text-xs leading-5 text-[#e5e7eb]">{short(problem.question, 100)}</p>
-                  </motion.button>
+            </ScrollArea>
+          </>
+        ) : (
+          <ScrollArea className="flex-1 p-3">
+            <ParamPanel params={params} onChange={setParams} disabled={running} />
+          </ScrollArea>
+        )}
+      </div>
+
+      {/* ── CENTER ──────────────────────────────────────────────── */}
+      <div className="flex flex-col w-96 border-r border-border shrink-0">
+        <div className="px-4 py-3 border-b border-border">
+          <Tabs defaultValue="custom">
+            <TabsList className="w-full">
+              <TabsTrigger value="custom" className="flex-1 text-xs">Custom</TabsTrigger>
+              <TabsTrigger value="benchmarks" className="flex-1 text-xs">Benchmarks</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="custom" className="mt-3 space-y-2">
+              <textarea value={customPrompt} onChange={e => setCustomPrompt(e.target.value)}
+                placeholder="Enter any problem for RAF to solve…"
+                className="w-full h-28 bg-background border border-border rounded-md p-3 text-sm resize-none focus:outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground font-mono"
+                disabled={running} />
+              <Button size="sm" className="w-full gap-1.5" disabled={running || !customPrompt.trim()}
+                onClick={() => launchRun(customPrompt)}>
+                {running ? <><span className="animate-spin">⟳</span> Running…</> : <><Zap className="h-3.5 w-3.5" /> Run RAF Pipeline</>}
+              </Button>
+            </TabsContent>
+
+            <TabsContent value="benchmarks" className="mt-3">
+              <div className="flex flex-wrap gap-1 mb-2">
+                {CATEGORIES.map(c => (
+                  <button key={c} onClick={() => setSelCat(c)}
+                    className={`text-[10px] px-2 py-0.5 rounded border transition-colors ${selCat === c ? 'border-primary text-primary bg-primary/10' : 'border-border text-muted-foreground hover:border-primary/50'}`}>
+                    {c}
+                  </button>
                 ))}
               </div>
-            </div>
-          )}
-
-          {/* ── Cluster Parameters ── */}
-          <ParameterPanel params={params} onChange={setParams} disabled={running} />
-
-          {/* Run button */}
-          <motion.button
-            whileHover={{ y: -2 }}
-            whileTap={{ scale: 0.98 }}
-            disabled={running || (mode === 'custom' && !customPrompt.trim())}
-            onClick={() => mode === 'custom' && launchRun(customPrompt)}
-            className="flex w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[#10b981] to-[#3b82f6] px-5 py-3.5 text-sm font-semibold text-white shadow-[0_12px_32px_rgba(16,185,129,0.25)] disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            {running ? <TimerReset className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />}
-            {running ? 'Running Pipeline…' : `Run ${params.solver.numVoters}-Voter ${params.aggregator.votingStrategy} Pipeline`}
-          </motion.button>
-
-          {/* Links */}
-          <div className="flex items-center gap-2">
-            <a href="/raf-demo/RAF-Paper.pdf" target="_blank" rel="noreferrer" className="flex-1 rounded-xl border border-white/8 px-3 py-2 text-center text-xs text-[#9ca3af] hover:bg-white/[0.04]">
-              <span className="flex items-center justify-center gap-1.5"><FileText className="h-3.5 w-3.5" /> Paper</span>
-            </a>
-            <a href="https://github.com/bennetttv/raf-demo" target="_blank" rel="noreferrer" className="flex-1 rounded-xl border border-white/8 px-3 py-2 text-center text-xs text-[#9ca3af] hover:bg-white/[0.04]">
-              GitHub
-            </a>
-          </div>
+              <div className="space-y-1.5 max-h-60 overflow-y-auto">
+                {PROBLEMS.filter(p => p.category === selCat).map(p => (
+                  <button key={p.id} disabled={running} onClick={() => launchRun(p.q)}
+                    className="w-full text-left px-3 py-2 rounded-md border border-border hover:border-primary/50 hover:bg-accent/30 transition-colors text-xs disabled:opacity-40">
+                    <div className="flex items-center justify-between mb-0.5">
+                      <Badge variant="outline" className="text-[10px] px-1 py-0">{p.id}</Badge>
+                      <span className="text-muted-foreground text-[10px]">→ {p.expected}</span>
+                    </div>
+                    <p className="text-muted-foreground line-clamp-2">{p.q}</p>
+                  </button>
+                ))}
+              </div>
+            </TabsContent>
+          </Tabs>
         </div>
 
-        {/* ═══════════════════ COLUMN 3: RESULTS + EXECUTION ═══════════════════ */}
-        <main className="min-h-0 overflow-y-auto p-4 lg:p-6">
-          <div className="flex flex-col gap-6 h-full">
-
-            {/* Hero header */}
-            <motion.header initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.45, ease }} className="rounded-[24px] border border-white/8 bg-[#111827]/84 p-5 shadow-[0_24px_80px_rgba(0,0,0,0.32)] backdrop-blur-xl">
-              <div className="flex flex-wrap items-start justify-between gap-4">
-                <div>
-                  <h2 className="font-['Space_Grotesk'] text-3xl font-semibold tracking-[-0.03em] text-white">
-                    Structured decomposition lets an <span className="text-[#3b82f6]">8B model</span> punch above its weight.
-                  </h2>
-                  <p className="mt-3 max-w-2xl text-sm leading-6 text-[#9ca3af]">
-                    <span className="text-[#c4b5fd]">Decomposer</span> → <span className="text-[#93c5fd]">k Solvers</span> → <span className="text-[#fcd34d]">Validator</span> → <span className="text-[#6ee7b7]">Aggregator</span>. Same model. Better orchestration. Better reliability.
-                  </p>
+        {/* Results */}
+        <ScrollArea className="flex-1 px-4 py-3">
+          {!activeSession && !running && (
+            <div className="flex flex-col items-center justify-center h-40 text-muted-foreground text-center">
+              <BarChart3 className="h-7 w-7 mb-2 opacity-30" />
+              <p className="text-xs">Run a problem to see results</p>
+            </div>
+          )}
+          {running && !activeSession?.result && (
+            <div className="space-y-2">
+              {[1, 2, 3].map(i => (
+                <div key={i} className="h-10 rounded-md bg-muted animate-pulse" style={{ animationDelay: `${i * 0.12}s` }} />
+              ))}
+              <p className="text-xs text-center text-muted-foreground mt-2">
+                RAF pipeline running… {graphNodes.length} LLM calls so far
+              </p>
+            </div>
+          )}
+          {activeSession?.result && (
+            <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="space-y-3">
+              <div className="rounded-md border border-border bg-card/50 p-3 text-xs">
+                <div className="text-muted-foreground mb-1">Problem</div>
+                <p className="text-foreground">{activeSession.problem}</p>
+              </div>
+              <div className={`rounded-md border p-3 ${activeSession.result.success ? 'border-green-500/30 bg-green-500/5' : 'border-red-500/30 bg-red-500/5'}`}>
+                <div className="flex items-center gap-2 mb-2">
+                  <span className={`text-xs font-semibold ${activeSession.result.success ? 'text-green-400' : 'text-red-400'}`}>
+                    {activeSession.result.success ? '✓ Complete' : '✗ Failed'}
+                  </span>
+                  <Badge variant="outline" className="text-[10px]">{activeSession.nodes.length} LLM calls</Badge>
                 </div>
-                <div className="flex gap-3">
-                  {[{ label: 'GSM8K', value: '92%', note: 'RAF + 8B' }, { label: '70B', value: '83.7%', note: 'baseline' }].map((metric) => (
-                    <div key={metric.label} className="rounded-xl border border-white/8 bg-white/[0.03] px-4 py-3">
-                      <div className="text-[10px] uppercase tracking-[0.18em] text-[#9ca3af]">{metric.label}</div>
-                      <div className="mt-1 font-['Space_Grotesk'] text-2xl font-semibold text-white">{metric.value}</div>
-                      <div className="text-xs text-[#9ca3af]">{metric.note}</div>
+                {activeSession.result.answer && (
+                  <div className="font-mono text-lg font-bold text-foreground leading-tight">
+                    {activeSession.result.answer.slice(0, 200)}
+                  </div>
+                )}
+                <p className="text-xs text-muted-foreground mt-2">{activeSession.result.summary.slice(0, 300)}</p>
+              </div>
+              {Object.keys(activeSession.result.children).length > 0 && (
+                <div className="rounded-md border border-border p-3 text-xs space-y-1.5">
+                  <div className="text-muted-foreground mb-1">Sub-tasks</div>
+                  {Object.entries(activeSession.result.children).map(([n, r]) => (
+                    <div key={n} className="flex items-start gap-2">
+                      <span className={`mt-1 h-1.5 w-1.5 rounded-full shrink-0 ${r.success ? 'bg-green-500' : 'bg-red-500'}`} />
+                      <div>
+                        <span className="font-medium text-foreground">{n}</span>
+                        {r.answer && <span className="text-primary ml-1">→ {r.answer.slice(0, 60)}</span>}
+                        <p className="text-muted-foreground">{r.summary.slice(0, 100)}</p>
+                      </div>
                     </div>
                   ))}
                 </div>
-              </div>
-            </motion.header>
+              )}
+            </motion.div>
+          )}
+        </ScrollArea>
+      </div>
 
-            {/* Results area + Execution Graph side by side */}
-            <div className="flex-1 grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
-
-              {/* ── Results column ── */}
-              <div className="space-y-5 min-h-0 overflow-y-auto">
-                {!activeSession?.problem ? (
-                  <div className="flex min-h-[320px] items-center justify-center rounded-[24px] border border-dashed border-white/10 bg-[#111827]/60 text-center text-[#9ca3af]">
-                    <div>
-                      <BarChart3 className="mx-auto mb-3 h-8 w-8 text-[#3b82f6]" />
-                      <p className="text-sm">Pick a benchmark or enter a prompt to watch RAF execute.</p>
-                    </div>
-                  </div>
-                ) : (
-                  <>
-                    {/* Current problem */}
-                    <div className="rounded-[20px] border border-white/8 bg-[#111827]/70 p-4 backdrop-blur-xl">
-                      <div className="text-[10px] uppercase tracking-[0.2em] text-[#9ca3af]">Current problem</div>
-                      <p className="mt-2 text-sm leading-6 text-[#e5e7eb]">{activeSession.problem}</p>
-                    </div>
-
-                    {/* Stats bar */}
-                    {aggregateStats && (
-                      <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="grid gap-2 grid-cols-4">
-                        {[
-                          { label: 'tok/s', value: aggregateStats.decodeRate.toFixed(0) },
-                          { label: 'TTFT', value: `${aggregateStats.ttft.toFixed(2)}s` },
-                          { label: 'Time', value: `${aggregateStats.totalTime.toFixed(1)}s` },
-                          { label: 'Tokens', value: String(Math.round(aggregateStats.totalTokens)) },
-                        ].map((stat) => (
-                          <div key={stat.label} className="rounded-xl border border-white/8 bg-white/[0.03] px-3 py-2.5">
-                            <div className="text-[10px] uppercase tracking-[0.18em] text-[#9ca3af]">{stat.label}</div>
-                            <div className="mt-1 font-['Space_Grotesk'] text-lg font-semibold">{stat.value}</div>
-                          </div>
-                        ))}
-                      </motion.div>
-                    )}
-
-                    {activeSession.result ? (
-                      <>
-                        {/* Final answer */}
-                        <div className="rounded-[20px] border border-[#10b981]/20 bg-[linear-gradient(135deg,rgba(16,185,129,0.12),rgba(59,130,246,0.08))] p-5">
-                          <div className="flex flex-wrap items-center justify-between gap-4">
-                            <div>
-                              <div className="text-[10px] uppercase tracking-[0.2em] text-[#9ca3af]">Result</div>
-                              <div className="mt-1 font-['Space_Grotesk'] text-3xl font-semibold text-white">{String(activeSession.result.finalAnswer ?? '—')}</div>
-                              <div className="mt-1 text-xs text-[#cbd5e1]">{activeSession.result.confidence}/{params.solver.numVoters} voters agreed</div>
-                            </div>
-                            {benchmarkOutcome && (
-                              <div className={`rounded-xl border px-3 py-2 text-xs ${answerMatches(activeSession.result.finalAnswer, benchmarkOutcome.expectedAnswer) ? 'border-[#10b981]/30 bg-[#10b981]/10 text-[#d1fae5]' : 'border-[#f43f5e]/30 bg-[#f43f5e]/10 text-[#ffe4e6]'}`}>
-                                Expected: {String(benchmarkOutcome.expectedAnswer)} {answerMatches(activeSession.result.finalAnswer, benchmarkOutcome.expectedAnswer) ? '✓' : '✗'}
-                              </div>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Decomposition steps */}
-                        <div className="rounded-[20px] border border-white/8 bg-[#111827]/70 p-4">
-                          <div className="mb-3 text-[10px] uppercase tracking-[0.2em] text-[#9ca3af]">Decomposition</div>
-                          <div className="space-y-2">
-                            {activeSession.result.decomposition.steps.map((step, index) => (
-                              <motion.div
-                                key={step}
-                                initial={{ opacity: 0, y: 12 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                transition={{ duration: 0.35, delay: index * 0.1, ease }}
-                                className="rounded-xl border border-white/6 bg-white/[0.03] p-3 text-xs leading-5 text-[#e5e7eb]"
-                              >
-                                {step}
-                              </motion.div>
-                            ))}
-                          </div>
-                        </div>
-
-                        {/* Voter responses */}
-                        <div className="rounded-[20px] border border-white/8 bg-[#111827]/70 p-4">
-                          <div className="mb-3 text-[10px] uppercase tracking-[0.2em] text-[#9ca3af]">Voter responses</div>
-                          <div className="space-y-2">
-                            {activeSession.result.voters.map((voter, index) => {
-                              const open = expandedVoters.includes(index);
-                              return (
-                                <div key={index} className="overflow-hidden rounded-xl border border-white/8 bg-white/[0.03]">
-                                  <button
-                                    onClick={() => setExpandedVoters((current) => (open ? current.filter((n) => n !== index) : [...current, index]))}
-                                    className="flex w-full items-center justify-between gap-3 p-3 text-left"
-                                  >
-                                    <div className="flex items-center gap-2">
-                                      <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: voterColors[index % voterColors.length] }} />
-                                      <span className="text-sm font-medium text-white">Voter {index + 1}</span>
-                                      <span className="text-xs text-[#9ca3af]">→ {String(voter.answer ?? '—')}</span>
-                                    </div>
-                                    {open ? <ChevronDown className="h-3.5 w-3.5 text-[#6b7280]" /> : <ChevronRight className="h-3.5 w-3.5 text-[#6b7280]" />}
-                                  </button>
-                                  <AnimatePresence>
-                                    {open && (
-                                      <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden border-t border-white/8">
-                                        <pre className="overflow-x-auto whitespace-pre-wrap p-3 font-['JetBrains_Mono'] text-[11px] leading-5 text-[#cbd5e1]">{voter.response}</pre>
-                                      </motion.div>
-                                    )}
-                                  </AnimatePresence>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      </>
-                    ) : running ? (
-                      <div className="space-y-3 rounded-[20px] border border-white/8 bg-[#111827]/70 p-4">
-                        {[1, 2, 3, 4].map((item) => (
-                          <div key={item} className="skeleton h-14 w-full rounded-xl" />
-                        ))}
-                      </div>
-                    ) : null}
-                  </>
-                )}
-              </div>
-
-              {/* ── Execution Graph column ── */}
-              <div className="rounded-[24px] border border-white/8 bg-[#111827]/70 p-3 backdrop-blur-xl">
-                <div className="mb-2 flex items-center justify-between px-1">
-                  <div className="text-[10px] uppercase tracking-[0.18em] text-[#9ca3af]">Execution Graph</div>
-                  <div className="rounded-full border border-white/10 px-2 py-0.5 text-[10px] text-[#6b7280]">D3.js</div>
+      {/* ── D3 GRAPH ────────────────────────────────────────────── */}
+      <div className="flex flex-col flex-1 min-w-0">
+        <div className="flex items-center justify-between px-4 py-2 border-b border-border shrink-0">
+          <div className="flex items-center gap-2">
+            <Network className="h-4 w-4 text-muted-foreground" />
+            <span className="font-medium text-sm">Execution Graph</span>
+            <Badge variant="outline" className="text-xs">{graphNodes.length} nodes</Badge>
+          </div>
+          <div className="flex items-center gap-4">
+            <div className="hidden xl:flex items-center gap-3">
+              {legend.map(l => (
+                <div key={l.l} className="flex items-center gap-1">
+                  <div className="h-2 w-2 rounded-full" style={{ background: l.c }} />
+                  <span className="text-[10px] text-muted-foreground">{l.l}</span>
                 </div>
-                <div className="h-[320px] rounded-[20px] border border-white/8 bg-[radial-gradient(circle_at_top,rgba(59,130,246,0.08),transparent_35%),#0a0f1a] xl:h-[calc(100%-40px)]">
-                  <GraphErrorBoundary>
-                    <ExecutionGraph nodes={activeSession?.graph.nodes ?? []} links={activeSession?.graph.links ?? []} />
-                  </GraphErrorBoundary>
-                </div>
-              </div>
-
+              ))}
+            </div>
+            <Separator orientation="vertical" className="h-5" />
+            <div className="flex items-center gap-2">
+              <Layers className="h-3.5 w-3.5 text-muted-foreground" />
+              <span className="text-xs text-muted-foreground">{graphMode === 'full' ? 'Full Detail' : 'Simplified'}</span>
+              <Switch checked={graphMode === 'simplified'} onCheckedChange={v => setGraphMode(v ? 'simplified' : 'full')} />
             </div>
           </div>
-        </main>
-
+        </div>
+        <div ref={graphRef} className="flex-1 min-h-0">
+          <ExecutionGraph nodes={graphNodes} links={graphLinks} mode={graphMode} width={gSize.w} height={gSize.h} />
+        </div>
       </div>
     </div>
   );

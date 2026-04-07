@@ -1,89 +1,47 @@
-@import "tailwindcss";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
-:root {
-  --bg-primary: #0a0f1a;
-  --bg-card: #111827;
-  --bg-card-hover: #1f2937;
-  --accent-blue: #3b82f6;
-  --accent-purple: #8b5cf6;
-  --accent-emerald: #10b981;
-  --accent-amber: #f59e0b;
-  --accent-rose: #f43f5e;
-  --text-primary: #f9fafb;
-  --text-secondary: #9ca3af;
-  --border: #1f2937;
-}
-
-* {
-  box-sizing: border-box;
-}
-
-body {
-  background-color: var(--bg-primary);
-  color: var(--text-primary);
-  font-family: 'Plus Jakarta Sans', sans-serif;
-  margin: 0;
-  padding: 0;
-  overflow: hidden;
-}
-
-h1, h2, h3, h4, h5, h6 {
-  font-family: 'Space Grotesk', sans-serif;
-}
-
-code, pre, .mono {
-  font-family: 'JetBrains Mono', monospace;
-}
-
-/* D3 Graph styles */
-.graph-link {
-  stroke-dasharray: 8 4;
-  animation: flowDash 1.5s linear infinite;
-}
-
-@keyframes flowDash {
-  to {
-    stroke-dashoffset: -24;
+@layer base {
+  :root {
+    --background: 222 47% 4%;
+    --foreground: 213 31% 91%;
+    --card: 222 47% 7%;
+    --card-foreground: 213 31% 91%;
+    --border: 216 34% 13%;
+    --input: 216 34% 13%;
+    --ring: 212 100% 60%;
+    --primary: 212 100% 60%;
+    --primary-foreground: 222 47% 4%;
+    --secondary: 222 47% 11%;
+    --secondary-foreground: 213 31% 91%;
+    --muted: 222 47% 11%;
+    --muted-foreground: 215 20% 55%;
+    --accent: 216 34% 13%;
+    --accent-foreground: 213 31% 91%;
+    --destructive: 0 63% 31%;
+    --destructive-foreground: 210 40% 98%;
+    --radius: 0.5rem;
   }
 }
 
-.graph-node circle {
-  transition: filter 0.3s ease;
+@layer base {
+  * { @apply border-border; }
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Space Grotesk', system-ui, sans-serif;
+    overflow: hidden;
+  }
 }
 
-.graph-node.active circle {
-  filter: drop-shadow(0 0 8px currentColor);
-  animation: nodePulse 1.5s ease-in-out infinite;
+.raf-edge-flow { stroke-dasharray: 8 4; animation: flowDash 1.2s linear infinite; }
+.raf-edge-dep { stroke-dasharray: 3 3; }
+@keyframes flowDash { to { stroke-dashoffset: -24; } }
+.raf-node-active circle { animation: nodeGlow 1.4s ease-in-out infinite; }
+@keyframes nodeGlow {
+  0%, 100% { filter: drop-shadow(0 0 4px currentColor); }
+  50% { filter: drop-shadow(0 0 14px currentColor); }
 }
-
-@keyframes nodePulse {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.7; transform: scale(1.1); }
-}
-
-.node-result circle {
-  filter: drop-shadow(0 0 12px #10b981);
-}
-
-/* Scrollbar */
-::-webkit-scrollbar {
-  width: 4px;
-}
-::-webkit-scrollbar-track {
-  background: var(--bg-primary);
-}
-::-webkit-scrollbar-thumb {
-  background: #374151;
-  border-radius: 2px;
-}
-
-/* Skeleton loading */
-@keyframes skeleton-pulse {
-  0%, 100% { opacity: 0.4; }
-  50% { opacity: 0.8; }
-}
-.skeleton {
-  animation: skeleton-pulse 1.5s ease-in-out infinite;
-  background: #1f2937;
-  border-radius: 4px;
-}
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: hsl(222 47% 4%); }
+::-webkit-scrollbar-thumb { background: hsl(216 34% 20%); border-radius: 2px; }
