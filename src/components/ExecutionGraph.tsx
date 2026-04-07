@@ -88,6 +88,11 @@ export function ExecutionGraph({ nodes, links, mode, width, height }: Props) {
     if (!simRef.current || !zlRef.current) return;
     const sim = simRef.current;
     const g = zlRef.current;
+    // Wrap entire D3 update in try-catch — D3 throws "node not found" errors
+    // that would otherwise escape the effect and unmount the React tree.
+    // The real fix is sim.nodes() before sim.force('link').links(), but this
+    // is a safety net for any other unexpected D3 errors.
+    try {
     const modeChanged = prevModeRef.current !== mode;
     prevModeRef.current = mode;
 
@@ -146,9 +151,16 @@ export function ExecutionGraph({ nodes, links, mode, width, height }: Props) {
       .attr('fill', '#888').attr('pointer-events', 'none').merge(lSel)
       .text(d => d.label.length > 16 ? d.label.slice(0, 15) + '…' : d.label);
 
-    (sim.force('link') as d3.ForceLink<GraphNode, GraphEdge>).links(vLinks);
+    // CRITICAL: nodes MUST be set before links — D3's forceLink.links() immediately
+    // resolves string IDs against the current node list. If a new link references a
+    // node that hasn't been added to sim.nodes() yet, D3 throws "node not found"
+    // which propagates out of the useEffect and unmounts the React tree (blank screen).
     sim.nodes(vNodes);
+    (sim.force('link') as d3.ForceLink<GraphNode, GraphEdge>).links(vLinks);
     sim.alpha(modeChanged ? 0.6 : 0.3).restart();
+    } catch (err) {
+      console.error('[ExecutionGraph] D3 update error (suppressed):', err);
+    }
   }, [nodes, links, mode, width, height]);
 
   useEffect(() => () => {
