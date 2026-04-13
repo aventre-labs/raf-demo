@@ -124,9 +124,11 @@ export default function App() {
     }
 
     if (ev.type === 'raf_node_done') {
-      nodesRef.current = nodesRef.current.map(n =>
-        n.id === mkId(ev.rafNodeId) ? { ...n, active: false, success: ev.success } : n
-      );
+      const node = nodesRef.current.find(n => n.id === mkId(ev.rafNodeId));
+      if (node) {
+        node.active = false;
+        node.success = ev.success;
+      }
       setGraphNodes([...nodesRef.current]);
       return;
     }
@@ -164,9 +166,11 @@ export default function App() {
     }
 
     if (ev.type === 'node_done') {
-      nodesRef.current = nodesRef.current.map(n =>
-        n.id === mkId(ev.nodeId) ? { ...n, active: false, success: ev.success } : n
-      );
+      const node = nodesRef.current.find(n => n.id === mkId(ev.nodeId));
+      if (node) {
+        node.active = false;
+        node.success = ev.success;
+      }
       setGraphNodes([...nodesRef.current]);
     }
   }, []);

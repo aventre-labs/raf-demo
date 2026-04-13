@@ -118,11 +118,15 @@ export function ExecutionGraph({ nodes, links, mode, width, height }: Props) {
 
       const vNodes = mode === 'full' ? nodes : nodes.filter(n => n.type === 'raf-node');
       const vIds   = new Set(vNodes.map(n => n.id));
-      const vLinks = mode === 'full' ? links : links.filter(l => {
+      const vLinks = (mode === 'full' ? links : links.filter(l => {
         const s = typeof l.source === 'string' ? l.source : (l.source as GraphNode).id;
         const t = typeof l.target === 'string' ? l.target : (l.target as GraphNode).id;
         return vIds.has(s) && vIds.has(t);
-      });
+      })).map(l => ({
+        ...l,
+        source: typeof l.source === 'string' ? l.source : (l.source as GraphNode).id,
+        target: typeof l.target === 'string' ? l.target : (l.target as GraphNode).id,
+      }));
 
       // ── D3 DOM update (enter / update / exit) ────────────────────────────
       const eSel = g.select<SVGGElement>('.edges').selectAll<SVGLineElement, GraphEdge>('line')
