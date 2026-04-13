@@ -58,7 +58,7 @@ export const DEFAULT_PARAMS: RAFParams = {
   errorFinderJurySize: 3,
   recoveryConsortiumSize: 3,
   minTopK: 4,
-  maxTopK: 12,
+  maxTopK: 8,
   extraContextLayer: false,
 };
 

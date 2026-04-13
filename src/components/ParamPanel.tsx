@@ -119,9 +119,9 @@ export function ParamPanel({
       </Section>
 
       <Section title="Sampling (TopK)" color="#64748b">
-        <PS label="Min TopK" value={params.minTopK} min={1} max={50}
+        <PS label="Min TopK" value={params.minTopK} min={1} max={8}
           onChange={v => set({ minTopK: Math.min(v, params.maxTopK) })} disabled={disabled} />
-        <PS label="Max TopK" value={params.maxTopK} min={1} max={50}
+        <PS label="Max TopK" value={params.maxTopK} min={1} max={8}
           onChange={v => set({ maxTopK: Math.max(v, params.minTopK) })} disabled={disabled} />
       </Section>
     </div>
