@@ -28,7 +28,7 @@ interface Session {
 }
 
 function uid() { return `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`; }
-function short(s: string, n = 34) { return s.length > n ? s.slice(0, n) + '…' : s; }
+function short(s: string, n = 34) { const str = String(s || ''); return str.length > n ? str.slice(0, n) + '…' : str; }
 function hhmm(ts: number) { return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
 
 const LS_KEY = 'raf-demo-sessions-v3';
@@ -562,7 +562,7 @@ export default function App() {
                               </span>
                             )}
                             <span className="ml-auto text-[10px] text-muted-foreground truncate">
-                              → {p.expected.slice(0, 30)}
+                              → {String(p.expected || '').slice(0, 30)}
                             </span>
                           </div>
                           <p className="text-muted-foreground line-clamp-3 leading-relaxed">{p.q}</p>
@@ -813,7 +813,7 @@ function ResultsPanel({
       {/* Problem */}
       <div className="rounded-md border border-border bg-card/50 p-3">
         <div className="text-[10px] text-muted-foreground mb-1 uppercase tracking-wider">Problem</div>
-        <p className="text-xs text-foreground leading-relaxed">{session.problem.slice(0, 300)}</p>
+        <p className="text-xs text-foreground leading-relaxed">{String(session.problem || '').slice(0, 300)}</p>
       </div>
 
       {/* Result */}
