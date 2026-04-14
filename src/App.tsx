@@ -92,6 +92,18 @@ export default function App() {
     const mkId = (id: string) => `${sid}::${id}`;
 
     if (ev.type === 'raf_node_start') {
+      const existingIdx = nodesRef.current.findIndex(n => n.id === mkId(ev.rafNodeId));
+      if (existingIdx !== -1) {
+        // Retry loop: update existing node to keep layout stable
+        const existing = nodesRef.current[existingIdx];
+        existing.active = true;
+        existing.success = undefined;
+        existing.label = ev.label === 'root' ? 'Problem' : ev.label;
+        existing.detail = `RafNode "${existing.label}" — depth ${ev.depth}`;
+        setGraphNodes([...nodesRef.current]);
+        return;
+      }
+
       // Seed initial position near the parent so D3 starts with good layout.
       // Root (depth=0) gets no position — ExecutionGraph pins it to center via fx/fy.
       const parentNode = ev.parentRafNodeId

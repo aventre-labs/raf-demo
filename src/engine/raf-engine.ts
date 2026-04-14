@@ -344,9 +344,10 @@ export async function execRafNode(
   depSummaryIn?: string,
   steeringAdvice?: string,
   retryCount = 0,
+  existingRid?: string,
 ): Promise<RafResult> {
-  const rid = nid('raf');
-  emit({ type: 'raf_node_start', rafNodeId: rid, parentRafNodeId: parentRafId, label: name, depth });
+  const rid = existingRid || nid('raf');
+  emit({ type: 'raf_node_start', rafNodeId: rid, parentRafNodeId: parentRafId, label: retryCount > 0 ? `${name} (Retry ${retryCount})` : name, depth });
 
   const tk = Math.round((params.minTopK + params.maxTopK) / 2);
 
@@ -459,7 +460,7 @@ export async function execRafNode(
       if (isOrigin && newAdvice) {
         // Scrap and re-run with steering advice
         emit({ type: 'raf_node_done', rafNodeId: rid, success: false, summary: `Retrying with correction (attempt ${retryCount + 2})` });
-        return execRafNode(context, params, depth, name, parentRafId, depSummaryIn, newAdvice, retryCount + 1);
+        return execRafNode(context, params, depth, name, parentRafId, depSummaryIn, newAdvice, retryCount + 1, rid);
       }
 
       // Not the origin — propagate failure up
@@ -566,7 +567,7 @@ export async function execRafNode(
 
       if (isOrigin && newAdvice) {
         emit({ type: 'raf_node_done', rafNodeId: rid, success: false, summary: `Retrying with correction (attempt ${retryCount + 2})` });
-        return execRafNode(context, params, depth, name, parentRafId, depSummaryIn, newAdvice, retryCount + 1);
+        return execRafNode(context, params, depth, name, parentRafId, depSummaryIn, newAdvice, retryCount + 1, rid);
       }
 
       emit({ type: 'raf_node_done', rafNodeId: rid, success: false, summary: finalAna.info });
