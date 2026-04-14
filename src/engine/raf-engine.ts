@@ -19,22 +19,22 @@ function emit(e: ExecutionEvent) { _cb?.(e); }
 
 const SYS = {
   baseCaseVote: `You are a task classifier for a Recursive Agent Framework (RAF).
-Your job is to decide if a task should be solved directly (BASE CASE) or broken into sub-tasks (RECURSIVE CASE).
+Your job is to decide if a task should be solved directly (BASE CASE) or broken down into smaller sub-tasks (RECURSIVE CASE).
 
-PREFER RECURSIVE CASE. Only classify as BASE CASE if the task meets ALL of the following:
-  1. It is a single, atomic arithmetic expression (one operation)
-  2. It has no sub-steps whatsoever
-  3. A human could answer it in under 3 seconds mentally
+Classify as BASE CASE if the task can be solved by an LLM in a single pass without needing complex, multi-step logical chains or parallel fact-finding.
+Examples of BASE CASE:
+  - Answering a direct factual question.
+  - Analyzing a specific snippet of code and identifying the exact bug or fix.
+  - Doing straightforward math or logic that doesn't require deep algorithmic tracing.
+  - Writing a short script or function from clear requirements.
 
-Examples:
-  "What is 7 + 8?" → Base Case
-  "Write a function to check palindromes" → Recursive Case
-  "Janet's ducks lay 16 eggs..." → Recursive Case (multiple logical steps)
-  "What is 2^100 mod 7?" → Recursive Case (requires algorithm)
-  "Sort this list: [3,1,2]" → Recursive Case (algorithm with sub-steps)
-  "Fix this bug in the code:" → Recursive Case (diagnosis + fix + verify)
+Classify as RECURSIVE CASE if the task requires:
+  - Breaking a large problem into distinct, independent sub-problems.
+  - Designing a complex system with multiple interacting parts.
+  - Mathematical proofs or multi-stage logical deduction.
+  - Solving a problem where later steps heavily depend on the complex, uncertain outcome of earlier steps.
 
-When in doubt: choose RECURSIVE CASE. Decomposition produces better results.
+When in doubt, if the problem looks like a standard prompt an LLM handles well, choose BASE CASE. If the problem is massive and clearly needs breaking down, choose RECURSIVE CASE.
 
 Respond with EXACTLY one of: "Base Case" or "Recursive Case" — nothing else.`,
 
@@ -85,21 +85,22 @@ Prefer analyses that catch errors over ones that are overly optimistic.
 Respond ONLY with the index number. Nothing else.`,
 
   planAgent: `You are a recursive decomposition planner for a Recursive Agent Framework.
-Break the problem into 2-4 independent sub-tasks that can each be solved recursively.
+Your task is to break down a complex problem into 2-4 distinct, actionable sub-tasks.
 
 Guidelines:
-- Each sub-task should be a meaningful, self-contained piece of the problem
-- Sub-tasks should be specific enough to be solvable but complex enough to benefit from recursion
-- Use dependsOn to chain tasks that need previous results
-- Name tasks descriptively (e.g. "parse-input", "compute-modular-exp", "verify-result")
+- DO NOT create trivial or microscopic sub-tasks (e.g., "read the string", "parse the data"). Sub-tasks should represent substantial chunks of work.
+- If a sub-task can be easily solved by a single LLM prompt, it's a good sub-task.
+- Sub-tasks can be run in parallel if they don't depend on each other.
+- Use dependsOn to chain tasks ONLY if a task strictly requires the output of another task to proceed.
+- Name tasks descriptively (e.g. "analyze-root-cause", "draft-implementation", "verify-solution").
 
 Output JSON array:
 [
-  {"name": "descriptive-task-id", "context": "FULL self-contained description of this sub-task, including all relevant info from the parent", "dependsOn": []},
+  {"name": "descriptive-task-id", "context": "FULL self-contained description of this sub-task, including all relevant info from the parent. The sub-task agent will ONLY see this context.", "dependsOn": []},
   {"name": "next-task", "context": "...", "dependsOn": ["descriptive-task-id"]}
 ]
 
-IMPORTANT: Each sub-task's "context" must be fully self-contained — it cannot assume the child agent has seen the parent's context.
+IMPORTANT: Each sub-task's "context" must be fully self-contained. Provide all necessary code, text, or rules inside the "context".
 Respond ONLY with a valid JSON array. No markdown.`,
 
   planJury: `Select the best decomposition plan from a numbered list.
