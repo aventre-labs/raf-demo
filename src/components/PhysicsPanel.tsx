@@ -60,9 +60,9 @@ export function PhysicsPanel({ physics, onChange }: Props) {
           <Control label="Link Strength" prop="linkStrength" min={0} max={2} step={0.05} />
           <Control label="Charge (Repulsion)" prop="chargeStrength" min={-3000} max={0} step={50} />
           <Control label="Charge Max Dist" prop="chargeDistanceMax" min={100} max={3000} step={100} />
-          <Control label="Center Force X" prop="forceXStrength" min={0} max={0.1} step={0.001} />
-          <Control label="Depth Force Y" prop="forceYStrength" min={0} max={2} step={0.05} />
-          <Control label="Level Spacing" prop="levelSpacing" min={40} max={400} step={10} />
+          <Control label="Outward Expansion" prop="outwardStrength" min={0} max={300} step={5} />
+          <Control label="Elastic Base Dist" prop="progressiveLinkBase" min={50} max={500} step={10} />
+          <Control label="Elastic Scale" prop="progressiveLinkScale" min={0} max={0.2} step={0.005} />
           <Control label="Collide Padding" prop="collideRadiusOffset" min={0} max={100} step={5} />
           <Control label="Collide Strength" prop="collideStrength" min={0} max={2} step={0.1} />
           <Control label="Alpha Decay" prop="alphaDecay" min={0.001} max={0.1} step={0.001} />

@@ -21,6 +21,70 @@ interface Props {
   onBackgroundClick?: () => void;
 }
 
+function forceConstantOutward(cx: number, cy: number, strength: number) {
+  let nodes: GraphNode[];
+  function force(alpha: number) {
+    for (let i = 0, n = nodes.length; i < n; ++i) {
+      const node = nodes[i];
+      if (node.depth === 0) continue;
+      const dx = (node.x ?? 0) - cx;
+      const dy = (node.y ?? 0) - cy;
+      const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+      node.vx = (node.vx ?? 0) + (dx / dist) * strength * alpha;
+      node.vy = (node.vy ?? 0) + (dy / dist) * strength * alpha;
+    }
+  }
+  force.initialize = function(_nodes: GraphNode[]) {
+    nodes = _nodes;
+  };
+  return force;
+}
+
+function forceProgressiveLink(baseDistance: number, strengthScale: number) {
+  let nodes: GraphNode[];
+  let links: GraphEdge[] = [];
+  function force(alpha: number) {
+    if (!nodes || !links.length) return;
+    for (let i = 0, n = links.length; i < n; ++i) {
+      const link = links[i];
+      const source = typeof link.source === 'object' ? link.source : null;
+      const target = typeof link.target === 'object' ? link.target : null;
+      if (!source || !target) continue;
+
+      const dx = (target.x ?? 0) - (source.x ?? 0);
+      const dy = (target.y ?? 0) - (source.y ?? 0);
+      const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+      
+      const stretch = Math.max(0, dist - baseDistance);
+      if (stretch > 0) {
+        // Clamp the maximum stretch to prevent physics explosions
+        const safeStretch = Math.min(stretch, 500);
+        // pull scales quadratically but is safely clamped
+        const pull = safeStretch * safeStretch * strengthScale * alpha * 0.01;
+        
+        // Ensure pull doesn't go completely infinite just in case
+        const clampedPull = Math.min(pull, 50);
+        
+        const pullX = (dx / dist) * clampedPull;
+        const pullY = (dy / dist) * clampedPull;
+
+        target.vx = (target.vx ?? 0) - pullX;
+        target.vy = (target.vy ?? 0) - pullY;
+        source.vx = (source.vx ?? 0) + pullX;
+        source.vy = (source.vy ?? 0) + pullY;
+      }
+    }
+  }
+  force.initialize = function(_nodes: GraphNode[]) {
+    nodes = _nodes;
+  };
+  force.links = function(_links: GraphEdge[]) {
+    links = _links;
+    return force;
+  };
+  return force;
+}
+
 export function ExecutionGraph({ nodes, links, mode, physics, width, height, onNodeClick, onBackgroundClick }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const simRef = useRef<d3.Simulation<GraphNode, GraphEdge> | null>(null);
@@ -74,8 +138,8 @@ export function ExecutionGraph({ nodes, links, mode, physics, width, height, onN
                           .distance(physics.linkDistance)
                           .strength(physics.linkStrength))
       .force('charge',  d3.forceManyBody().strength(physics.chargeStrength).distanceMax(physics.chargeDistanceMax))
-      .force('x',       d3.forceX(width / 2).strength(physics.forceXStrength))
-      .force('y',       d3.forceY<GraphNode>(d => 80 + (d.depth ?? 0) * physics.levelSpacing).strength(physics.forceYStrength))
+      .force('outward', forceConstantOutward(width / 2, height / 2, physics.outwardStrength))
+      .force('progressiveLink', forceProgressiveLink(physics.progressiveLinkBase, physics.progressiveLinkScale))
       .force('collide', d3.forceCollide<GraphNode>().radius(d => NR[d.type] + physics.collideRadiusOffset).strength(physics.collideStrength))
       .alphaDecay(physics.alphaDecay)
       .velocityDecay(physics.velocityDecay);
@@ -109,13 +173,12 @@ export function ExecutionGraph({ nodes, links, mode, physics, width, height, onN
       .strength(physics.chargeStrength)
       .distanceMax(physics.chargeDistanceMax);
       
-    (sim.force('x') as d3.ForceX<GraphNode>)
-      .x(width / 2)
-      .strength(physics.forceXStrength);
-      
-    (sim.force('y') as d3.ForceY<GraphNode>)
-      .y(d => 80 + (d.depth ?? 0) * physics.levelSpacing)
-      .strength(physics.forceYStrength);
+    sim.force('outward', forceConstantOutward(width / 2, height / 2, physics.outwardStrength));
+    
+    const vLinks = (sim.force('link') as d3.ForceLink<GraphNode, GraphEdge>).links();
+    sim.force('progressiveLink', forceProgressiveLink(physics.progressiveLinkBase, physics.progressiveLinkScale));
+    const progForce = sim.force('progressiveLink') as any;
+    if (progForce) progForce.links(vLinks);
     
     (sim.force('collide') as d3.ForceCollide<GraphNode>)
       .radius(d => NR[d.type] + physics.collideRadiusOffset)
@@ -138,12 +201,12 @@ export function ExecutionGraph({ nodes, links, mode, physics, width, height, onN
       const isAddition = nodes.length > prevCountRef.current;
       prevCountRef.current = nodes.length;
 
-      // ── Pin root node to graph center horizontally, top vertically ────────
-      // Root node (depth=0) is held at (cx, 100) so the tree grows downwards.
+      // ── Pin root node to graph center ────────
+      // Root node (depth=0) is held at the center so the graph grows radially.
       // We don't pin after the run completes (when active=false) so the user
       // can drag it freely once the layout has settled.
       const cx = width  / 2;
-      const cy = 100;
+      const cy = height / 2;
       nodes.forEach(n => {
         if (n.depth === 0) {
           n.fx = n.active ? cx : null;
@@ -247,6 +310,8 @@ export function ExecutionGraph({ nodes, links, mode, physics, width, height, onN
       // CRITICAL ORDER: nodes first so D3 builds nodeById before links resolve.
       sim.nodes(vNodes);
       (sim.force('link') as d3.ForceLink<GraphNode, GraphEdge>).links(vLinks);
+      const progForce = sim.force('progressiveLink') as any;
+      if (progForce) progForce.links(vLinks);
 
       // Use moderate alpha for mode changes, low for pure status updates.
       // Prevent alpha explosion: only boost alpha if it's currently lower than target.
