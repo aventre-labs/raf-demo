@@ -364,38 +364,30 @@ export async function execRafNode(
   // ── Base Case Vote ────────────────────────────────────────────────────────
   let isBase = false;
 
-  if (depth === 0) {
-    const voteJuryId = nid('jury');
-    emit({ type: 'node_start', nodeId: voteJuryId, label: 'Base Case Jury (Skipped)', nodeType: 'jury', parentId: rid, rafNodeId: rid, edgeType: 'flow', prompt: 'Root node automatically forced to recursive case.', systemPrompt: SYS.baseCaseVote });
-    emit({ type: 'node_done', nodeId: voteJuryId, success: true, summary: '→ Recursive Case (Forced)', durationMs: 0 });
-    emit({ type: 'raf_node_type', rafNodeId: rid, caseType: 'recursive' });
-    isBase = false;
-  } else {
-    const voteJuryId = nid('jury');
-    const votePrompt = `Depth: ${depth}/${MAX_RECURSION_DEPTH}\n\nTask to classify:\n${String(ctx || '')?.slice(0, 800)}`;
-    emit({ type: 'node_start', nodeId: voteJuryId, label: `Base Case Jury (n=${params.baseCaseJurySize})`, nodeType: 'jury', parentId: rid, rafNodeId: rid, edgeType: 'flow', prompt: votePrompt, systemPrompt: SYS.baseCaseVote });
+  const voteJuryId = nid('jury');
+  const votePrompt = `Depth: ${depth}/${MAX_RECURSION_DEPTH}\n\nTask to classify:\n${String(ctx || '')?.slice(0, 800)}`;
+  emit({ type: 'node_start', nodeId: voteJuryId, label: `Base Case Jury (n=${params.baseCaseJurySize})`, nodeType: 'jury', parentId: rid, rafNodeId: rid, edgeType: 'flow', prompt: votePrompt, systemPrompt: SYS.baseCaseVote });
 
-    const voteTallies: Record<string, number> = {};
-    const startVoteJury = Date.now();
-    await Promise.all(Array.from({ length: params.baseCaseJurySize }, async (_, i) => {
-      const vid = nid('agent');
-      emit({ type: 'node_start', nodeId: vid, label: `Voter ${i + 1}`, nodeType: 'agent', parentId: voteJuryId, rafNodeId: rid, edgeType: 'parallel', prompt: votePrompt, systemPrompt: SYS.baseCaseVote });
-      const startVid = Date.now();
-      const r = await callLLM(
-        [{ role: 'user', content: votePrompt }],
-        SYS.baseCaseVote, tk, MAX_LLM_CALLS,
-      );
-      const vote = r.text.toLowerCase().includes('base') ? 'Base Case' : 'Recursive Case';
-      voteTallies[vote] = (voteTallies[vote] ?? 0) + 1;
-      emit({ type: 'node_done', nodeId: vid, success: true, summary: vote, rawResponse: r.text, durationMs: Date.now() - startVid });
-    }));
+  const voteTallies: Record<string, number> = {};
+  const startVoteJury = Date.now();
+  await Promise.all(Array.from({ length: params.baseCaseJurySize }, async (_, i) => {
+    const vid = nid('agent');
+    emit({ type: 'node_start', nodeId: vid, label: `Voter ${i + 1}`, nodeType: 'agent', parentId: voteJuryId, rafNodeId: rid, edgeType: 'parallel', prompt: votePrompt, systemPrompt: SYS.baseCaseVote });
+    const startVid = Date.now();
+    const r = await callLLM(
+      [{ role: 'user', content: votePrompt }],
+      SYS.baseCaseVote, tk, MAX_LLM_CALLS,
+    );
+    const vote = r.text.toLowerCase().includes('base') ? 'Base Case' : 'Recursive Case';
+    voteTallies[vote] = (voteTallies[vote] ?? 0) + 1;
+    emit({ type: 'node_done', nodeId: vid, success: true, summary: vote, rawResponse: r.text, durationMs: Date.now() - startVid });
+  }));
 
-    // Force base case at max depth to prevent infinite recursion
-    isBase = depth >= MAX_RECURSION_DEPTH
-      || (voteTallies['Base Case'] ?? 0) > (voteTallies['Recursive Case'] ?? 0);
-    emit({ type: 'node_done', nodeId: voteJuryId, success: true, summary: isBase ? '→ Base Case' : '→ Recursive Case', durationMs: Date.now() - startVoteJury });
-    emit({ type: 'raf_node_type', rafNodeId: rid, caseType: isBase ? 'base' : 'recursive' });
-  }
+  // Force base case at max depth to prevent infinite recursion
+  isBase = depth >= MAX_RECURSION_DEPTH
+    || (voteTallies['Base Case'] ?? 0) > (voteTallies['Recursive Case'] ?? 0);
+  emit({ type: 'node_done', nodeId: voteJuryId, success: true, summary: isBase ? '→ Base Case' : '→ Recursive Case', durationMs: Date.now() - startVoteJury });
+  emit({ type: 'raf_node_type', rafNodeId: rid, caseType: isBase ? 'base' : 'recursive' });
 
   if (isBase) {
     // ── BASE CASE ────────────────────────────────────────────────────────────
