@@ -97,8 +97,24 @@ export default function App() {
       const parentNode = ev.parentRafNodeId
         ? nodesRef.current.find(n => n.id === mkId(ev.parentRafNodeId!))
         : null;
-      const angle = Math.random() * Math.PI * 2;
-      const spread = 80 + ev.depth * 20;
+      const rootNode = nodesRef.current[0];
+      
+      let spawnX, spawnY;
+      if (parentNode) {
+        const spread = 80 + ev.depth * 20;
+        if (rootNode && rootNode !== parentNode && parentNode.x !== undefined && parentNode.y !== undefined && rootNode.x !== undefined && rootNode.y !== undefined) {
+          const dx = parentNode.x - rootNode.x;
+          const dy = parentNode.y - rootNode.y;
+          const angle = Math.atan2(dy, dx) + (Math.random() - 0.5) * 1.5;
+          spawnX = parentNode.x + Math.cos(angle) * spread;
+          spawnY = parentNode.y + Math.sin(angle) * spread;
+        } else {
+          const angle = Math.random() * Math.PI * 2;
+          spawnX = (parentNode.x ?? 0) + Math.cos(angle) * spread;
+          spawnY = (parentNode.y ?? 0) + Math.sin(angle) * spread;
+        }
+      }
+
       const node: GraphNode = {
         id: mkId(ev.rafNodeId),
         type: 'raf-node',
@@ -107,10 +123,7 @@ export default function App() {
         active: true,
         rafNodeId: ev.rafNodeId,
         depth: ev.depth,
-        ...(parentNode
-          ? { x: (parentNode.x ?? 0) + (Math.random() - 0.5) * spread,
-              y: (parentNode.y ?? 0) + spread * 0.8 }
-          : {}),
+        ...(parentNode ? { x: spawnX, y: spawnY } : {}),
       };
       nodesRef.current = [...nodesRef.current, node];
       if (ev.parentRafNodeId) {
@@ -150,7 +163,24 @@ export default function App() {
       const parentNode = ev.parentId
         ? nodesRef.current.find(n => n.id === mkId(ev.parentId!))
         : null;
-      const angle = Math.random() * Math.PI * 2;
+      const rootNode = nodesRef.current[0];
+      
+      let spawnX, spawnY;
+      if (parentNode) {
+        const spread = 60;
+        if (rootNode && rootNode !== parentNode && parentNode.x !== undefined && parentNode.y !== undefined && rootNode.x !== undefined && rootNode.y !== undefined) {
+          const dx = parentNode.x - rootNode.x;
+          const dy = parentNode.y - rootNode.y;
+          const angle = Math.atan2(dy, dx) + (Math.random() - 0.5) * 1.5;
+          spawnX = parentNode.x + Math.cos(angle) * spread;
+          spawnY = parentNode.y + Math.sin(angle) * spread;
+        } else {
+          const angle = Math.random() * Math.PI * 2;
+          spawnX = (parentNode.x ?? 0) + Math.cos(angle) * spread;
+          spawnY = (parentNode.y ?? 0) + Math.sin(angle) * spread;
+        }
+      }
+
       const node: GraphNode = {
         id: mkId(ev.nodeId),
         type: ev.nodeType,
@@ -161,10 +191,7 @@ export default function App() {
         depth: parentNode ? (parentNode.depth ?? 0) + 0.5 : 0,
         prompt: ev.prompt,
         systemPrompt: ev.systemPrompt,
-        ...(parentNode
-          ? { x: (parentNode.x ?? 0) + (Math.random() - 0.5) * 60,
-              y: (parentNode.y ?? 0) + 50 }
-          : {}),
+        ...(parentNode ? { x: spawnX, y: spawnY } : {}),
       };
       nodesRef.current = [...nodesRef.current, node];
       if (ev.parentId) {
