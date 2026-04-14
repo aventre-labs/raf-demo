@@ -16,9 +16,11 @@ interface Props {
   mode: GraphMode;
   width: number;
   height: number;
+  onNodeClick?: (node: GraphNode) => void;
+  onBackgroundClick?: () => void;
 }
 
-export function ExecutionGraph({ nodes, links, mode, width, height }: Props) {
+export function ExecutionGraph({ nodes, links, mode, width, height, onNodeClick, onBackgroundClick }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const simRef = useRef<d3.Simulation<GraphNode, GraphEdge> | null>(null);
   const zlRef  = useRef<d3.Selection<SVGGElement, unknown, null, undefined> | null>(null);
@@ -59,6 +61,7 @@ export function ExecutionGraph({ nodes, links, mode, width, height }: Props) {
       .scaleExtent([0.08, 5])
       .on('zoom', e => zl.attr('transform', e.transform.toString()))
     );
+    svg.on('click', () => onBackgroundClick?.());
 
     zl.append('g').attr('class', 'edges');
     zl.append('g').attr('class', 'nodes');
@@ -172,6 +175,10 @@ export function ExecutionGraph({ nodes, links, mode, width, height }: Props) {
         .attr('opacity', d => d.active ? 1 : 0.75);
 
       nMerge
+        .on('click', (e, d) => {
+          onNodeClick?.(d);
+          e.stopPropagation();
+        })
         .on('mouseenter', function(_e, d) {
           d3.select(this).select('circle').transition().duration(100).attr('r', NR[d.type] * 1.35);
           d3.select(this).select('title').remove();

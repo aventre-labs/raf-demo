@@ -54,6 +54,7 @@ export default function App() {
   const linksRef = useRef<GraphEdge[]>([]);
   const [graphNodes, setGraphNodes] = useState<GraphNode[]>([]);
   const [graphLinks, setGraphLinks] = useState<GraphEdge[]>([]);
+  const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
 
   // Graph panel dimensions
   const graphRef = useRef<HTMLDivElement>(null);
@@ -182,6 +183,7 @@ export default function App() {
     linksRef.current = [];
     setGraphNodes([]);
     setGraphLinks([]);
+    setSelectedNode(null);
     setLiveCallCount(0);
     setActiveId(id);
 
@@ -333,6 +335,7 @@ export default function App() {
                   setActiveId('');
                   setGraphNodes([]);
                   setGraphLinks([]);
+                  setSelectedNode(null);
                   nodesRef.current = [];
                   linksRef.current = [];
                 }}
@@ -443,77 +446,69 @@ export default function App() {
               transition={{ duration: 0.1 }}
               className="flex flex-col flex-1 min-h-0"
             >
-              {/* Category selector */}
-              <div className="px-3 pt-3 pb-2 border-b border-border shrink-0">
-                <div className="flex flex-wrap gap-1">
-                  {CATEGORIES.map(c => (
-                    <button
-                      key={c}
-                      onClick={() => setSelCat(c)}
-                      className={`text-[10px] px-2 py-0.5 rounded-full border font-medium transition-colors ${
-                        selCat === c
-                          ? 'border-primary text-primary bg-primary/10'
-                          : 'border-border text-muted-foreground hover:border-primary/50 hover:text-foreground'
-                      }`}
-                    >
-                      {c}
-                    </button>
-                  ))}
-                </div>
-                {BENCHMARKS_META[selCat] && (
-                  <p className="text-[10px] text-muted-foreground mt-1.5 leading-relaxed">
-                    <span className="font-medium text-foreground">{BENCHMARKS_META[selCat].name}</span>
-                    {' — '}{BENCHMARKS_META[selCat].description}
-                  </p>
-                )}
-              </div>
-
-              {/* Problem list — fills remaining space */}
-              <ScrollArea className="flex-1">
-                <div className="p-2 space-y-1.5">
-                  {PROBLEMS.filter(p => p.category === selCat).map(p => (
-                    <button
-                      key={p.id}
-                      disabled={running}
-                      onClick={() => launchRun(p.q)}
-                      className="w-full text-left px-3 py-2.5 rounded-md border border-border hover:border-primary/50 hover:bg-accent/30 active:bg-accent/50 transition-colors text-xs disabled:opacity-40 disabled:cursor-not-allowed"
-                    >
-                      <div className="flex items-center gap-2 mb-1">
-                        <Badge variant="outline" className="text-[10px] px-1 py-0 font-mono shrink-0">
-                          {p.id}
-                        </Badge>
-                        {p.difficulty && (
-                          <span className={`text-[10px] font-medium ${
-                            p.difficulty === 'easy' ? 'text-green-400' :
-                            p.difficulty === 'medium' ? 'text-amber-400' : 'text-red-400'
-                          }`}>
-                            {p.difficulty}
-                          </span>
-                        )}
-                        <span className="ml-auto text-[10px] text-muted-foreground truncate">
-                          → {p.expected.slice(0, 30)}
-                        </span>
-                      </div>
-                      <p className="text-muted-foreground line-clamp-3 leading-relaxed">{p.q}</p>
-                    </button>
-                  ))}
-                </div>
-              </ScrollArea>
-
-              {/* Run button when a session is active */}
-              {running && (
-                <div className="px-3 py-2 border-t border-border shrink-0 bg-card/50">
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <span className="animate-spin inline-block text-primary">⟳</span>
-                    Running… {liveCallCount}/{MAX_LLM_CALLS} LLM calls
-                    <div className="flex-1 h-1 bg-muted rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-primary transition-all duration-300 rounded-full"
-                        style={{ width: `${Math.min((liveCallCount / MAX_LLM_CALLS) * 100, 100)}%` }}
-                      />
+              {activeSession || running ? (
+                <ScrollArea className="flex-1">
+                  <ResultsPanel session={activeSession} running={running} liveCallCount={liveCallCount} nodes={graphNodes} />
+                </ScrollArea>
+              ) : (
+                <>
+                  {/* Category selector */}
+                  <div className="px-3 pt-3 pb-2 border-b border-border shrink-0">
+                    <div className="flex flex-wrap gap-1">
+                      {CATEGORIES.map(c => (
+                        <button
+                          key={c}
+                          onClick={() => setSelCat(c)}
+                          className={`text-[10px] px-2 py-0.5 rounded-full border font-medium transition-colors ${
+                            selCat === c
+                              ? 'border-primary text-primary bg-primary/10'
+                              : 'border-border text-muted-foreground hover:border-primary/50 hover:text-foreground'
+                          }`}
+                        >
+                          {c}
+                        </button>
+                      ))}
                     </div>
+                    {BENCHMARKS_META[selCat] && (
+                      <p className="text-[10px] text-muted-foreground mt-1.5 leading-relaxed">
+                        <span className="font-medium text-foreground">{BENCHMARKS_META[selCat].name}</span>
+                        {' — '}{BENCHMARKS_META[selCat].description}
+                      </p>
+                    )}
                   </div>
-                </div>
+
+                  {/* Problem list — fills remaining space */}
+                  <ScrollArea className="flex-1">
+                    <div className="p-2 space-y-1.5">
+                      {PROBLEMS.filter(p => p.category === selCat).map(p => (
+                        <button
+                          key={p.id}
+                          disabled={running}
+                          onClick={() => launchRun(p.q)}
+                          className="w-full text-left px-3 py-2.5 rounded-md border border-border hover:border-primary/50 hover:bg-accent/30 active:bg-accent/50 transition-colors text-xs disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                          <div className="flex items-center gap-2 mb-1">
+                            <Badge variant="outline" className="text-[10px] px-1 py-0 font-mono shrink-0">
+                              {p.id}
+                            </Badge>
+                            {p.difficulty && (
+                              <span className={`text-[10px] font-medium ${
+                                p.difficulty === 'easy' ? 'text-green-400' :
+                                p.difficulty === 'medium' ? 'text-amber-400' : 'text-red-400'
+                              }`}>
+                                {p.difficulty}
+                              </span>
+                            )}
+                            <span className="ml-auto text-[10px] text-muted-foreground truncate">
+                              → {p.expected.slice(0, 30)}
+                            </span>
+                          </div>
+                          <p className="text-muted-foreground line-clamp-3 leading-relaxed">{p.q}</p>
+                        </button>
+                      ))}
+                    </div>
+                  </ScrollArea>
+                </>
               )}
             </motion.div>
           )}
@@ -562,14 +557,62 @@ export default function App() {
         </div>
 
         {/* D3 canvas */}
-        <div ref={graphRef} className="flex-1 min-h-0">
+        <div ref={graphRef} className="flex-1 min-h-0 relative">
           <ExecutionGraph
             nodes={graphNodes}
             links={graphLinks}
             mode={graphMode}
             width={gSize.w}
             height={gSize.h}
+            onNodeClick={setSelectedNode}
+            onBackgroundClick={() => setSelectedNode(null)}
           />
+          
+          {/* Selected Node Inspector */}
+          <AnimatePresence>
+            {selectedNode && (
+              <motion.div
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: 20 }}
+                className="absolute top-4 right-4 w-72 bg-card/95 backdrop-blur shadow-xl border border-border rounded-lg overflow-hidden flex flex-col z-10"
+              >
+                <div className="px-3 py-2 border-b border-border flex justify-between items-center shrink-0">
+                  <div className="flex items-center gap-2">
+                    <span className="h-2 w-2 rounded-full" style={{ background: { 'raf-node': '#00e5ff', jury: '#e040fb', consortium: '#ffeb3b', agent: '#69ff47', recovery: '#f43f5e', analysis: '#ff9100' }[selectedNode.type] || '#888' }} />
+                    <span className="font-medium text-xs truncate">{selectedNode.label}</span>
+                  </div>
+                  <button onClick={() => setSelectedNode(null)} className="text-muted-foreground hover:text-foreground">
+                    ✕
+                  </button>
+                </div>
+                <div className="p-3 text-xs overflow-y-auto max-h-64">
+                  <div className="mb-2">
+                    <span className="text-[10px] uppercase text-muted-foreground">Type</span>
+                    <p className="capitalize">{selectedNode.type.replace('-', ' ')}</p>
+                  </div>
+                  {selectedNode.depth !== undefined && (
+                    <div className="mb-2">
+                      <span className="text-[10px] uppercase text-muted-foreground">Depth</span>
+                      <p>{selectedNode.depth}</p>
+                    </div>
+                  )}
+                  {selectedNode.success !== undefined && (
+                    <div className="mb-2">
+                      <span className="text-[10px] uppercase text-muted-foreground">Status</span>
+                      <p className={selectedNode.success ? 'text-green-400' : 'text-red-400'}>
+                        {selectedNode.success ? 'Success' : 'Failed'}
+                      </p>
+                    </div>
+                  )}
+                  <div>
+                    <span className="text-[10px] uppercase text-muted-foreground">Details</span>
+                    <p className="text-muted-foreground leading-relaxed mt-0.5 whitespace-pre-wrap">{selectedNode.detail}</p>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </div>
     </div>
@@ -584,10 +627,12 @@ function ResultsPanel({
   session,
   running,
   liveCallCount,
+  nodes,
 }: {
   session: Session | null;
   running: boolean;
   liveCallCount: number;
+  nodes: GraphNode[];
 }) {
   if (!session && !running) {
     return (
@@ -598,9 +643,35 @@ function ResultsPanel({
     );
   }
 
+  const maxDepth = nodes.reduce((m, n) => Math.max(m, n.depth || 0), 0);
+  const totalNodes = nodes.length;
+  const errorsHandled = nodes.filter(n => n.success === false).length;
+  
+  const StatsStrip = () => (
+    <div className="grid grid-cols-2 gap-2 text-xs mb-4">
+      <div className="p-2 bg-card rounded-md border border-border flex flex-col items-center justify-center text-center">
+        <span className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">Nodes Gen</span>
+        <span className="font-semibold text-foreground text-sm">{totalNodes}</span>
+      </div>
+      <div className="p-2 bg-card rounded-md border border-border flex flex-col items-center justify-center text-center">
+        <span className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">Max Depth</span>
+        <span className="font-semibold text-foreground text-sm">{maxDepth}</span>
+      </div>
+      <div className="p-2 bg-card rounded-md border border-border flex flex-col items-center justify-center text-center">
+        <span className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">LLM Calls</span>
+        <span className="font-semibold text-primary text-sm">{running ? liveCallCount : session?.callCount ?? 0}</span>
+      </div>
+      <div className="p-2 bg-card rounded-md border border-border flex flex-col items-center justify-center text-center">
+        <span className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">Errors Handled</span>
+        <span className="font-semibold text-red-400 text-sm">{errorsHandled}</span>
+      </div>
+    </div>
+  );
+
   if (running && !session?.result) {
     return (
       <div className="p-4 space-y-2">
+        <StatsStrip />
         {[1, 2, 3].map(i => (
           <div
             key={i}
@@ -609,7 +680,7 @@ function ResultsPanel({
           />
         ))}
         <p className="text-xs text-center text-muted-foreground mt-3">
-          RAF pipeline running… {liveCallCount} LLM calls so far
+          RAF pipeline running…
         </p>
       </div>
     );
@@ -618,15 +689,13 @@ function ResultsPanel({
   if (session?.error) {
     return (
       <div className="p-4">
+        <StatsStrip />
         <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3">
           <div className="flex items-center gap-2 mb-2">
             <AlertCircle className="h-4 w-4 text-amber-400 shrink-0" />
             <span className="text-xs font-semibold text-amber-400">Run Ended</span>
           </div>
           <p className="text-xs text-muted-foreground">{session.error}</p>
-          <p className="text-[10px] text-muted-foreground mt-2">
-            {session.callCount} LLM calls made · {session.nodes.length} graph nodes generated
-          </p>
         </div>
       </div>
     );
@@ -642,6 +711,8 @@ function ResultsPanel({
       animate={{ opacity: 1, y: 0 }}
       className="p-4 space-y-3"
     >
+      <StatsStrip />
+
       {/* Problem */}
       <div className="rounded-md border border-border bg-card/50 p-3">
         <div className="text-[10px] text-muted-foreground mb-1 uppercase tracking-wider">Problem</div>
