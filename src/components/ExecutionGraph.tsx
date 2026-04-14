@@ -39,6 +39,45 @@ function forceConstantOutward(cx: number, cy: number, strength: number) {
   return force;
 }
 
+function forceProgressiveLink(baseDistance: number, strengthScale: number) {
+  let nodes: GraphNode[];
+  let links: GraphEdge[] = [];
+  function force(alpha: number) {
+    if (!nodes || !links.length) return;
+    for (let i = 0, n = links.length; i < n; ++i) {
+      const link = links[i];
+      const source = typeof link.source === 'object' ? link.source : null;
+      const target = typeof link.target === 'object' ? link.target : null;
+      if (!source || !target) continue;
+
+      const dx = (target.x ?? 0) - (source.x ?? 0);
+      const dy = (target.y ?? 0) - (source.y ?? 0);
+      const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+      
+      const stretch = Math.max(0, dist - baseDistance);
+      if (stretch > 0) {
+        // pull scales quadratically with stretch
+        const pull = stretch * stretch * strengthScale * alpha;
+        const pullX = (dx / dist) * pull;
+        const pullY = (dy / dist) * pull;
+
+        target.vx = (target.vx ?? 0) - pullX;
+        target.vy = (target.vy ?? 0) - pullY;
+        source.vx = (source.vx ?? 0) + pullX;
+        source.vy = (source.vy ?? 0) + pullY;
+      }
+    }
+  }
+  force.initialize = function(_nodes: GraphNode[]) {
+    nodes = _nodes;
+  };
+  force.links = function(_links: GraphEdge[]) {
+    links = _links;
+    return force;
+  };
+  return force;
+}
+
 export function ExecutionGraph({ nodes, links, mode, width, height, onNodeClick, onBackgroundClick }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const simRef = useRef<d3.Simulation<GraphNode, GraphEdge> | null>(null);
@@ -93,6 +132,7 @@ export function ExecutionGraph({ nodes, links, mode, width, height, onNodeClick,
                           .strength(0.8))
       .force('charge',  d3.forceManyBody().strength(-1500).distanceMax(1500))
       .force('outward', forceConstantOutward(width / 2, height / 2, 80))
+      .force('progressiveLink', forceProgressiveLink(150, 0.05))
       .force('collide', d3.forceCollide<GraphNode>().radius(d => NR[d.type] + 40).strength(1))
       .alphaDecay(0.015)
       .velocityDecay(0.45);
@@ -234,6 +274,8 @@ export function ExecutionGraph({ nodes, links, mode, width, height, onNodeClick,
       // CRITICAL ORDER: nodes first so D3 builds nodeById before links resolve.
       sim.nodes(vNodes);
       (sim.force('link') as d3.ForceLink<GraphNode, GraphEdge>).links(vLinks);
+      const progForce = sim.force('progressiveLink') as any;
+      if (progForce) progForce.links(vLinks);
 
       // Use moderate alpha for mode changes, low for pure status updates.
       // Prevent alpha explosion: only boost alpha if it's currently lower than target.
