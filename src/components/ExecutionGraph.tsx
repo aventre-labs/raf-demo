@@ -70,12 +70,11 @@ export function ExecutionGraph({ nodes, links, mode, width, height, onNodeClick,
     simRef.current = d3.forceSimulation<GraphNode>([])
       .force('link',    d3.forceLink<GraphNode, GraphEdge>([])
                           .id(d => d.id)
-                          .distance(80)
-                          .strength(0.7))
-      .force('charge',  d3.forceManyBody().strength(-800).distanceMax(1000))
-      .force('x',       d3.forceX(width / 2).strength(0.05))
-      .force('y',       d3.forceY(height / 2).strength(0.05))
-      .force('collide', d3.forceCollide<GraphNode>().radius(d => NR[d.type] + 30).strength(1))
+                          .distance(100)
+                          .strength(0.8))
+      .force('charge',  d3.forceManyBody().strength(-1500).distanceMax(1500))
+      .force('radial',  d3.forceRadial<GraphNode>(d => (d.depth ?? 0) * 160, width / 2, height / 2).strength(0.8))
+      .force('collide', d3.forceCollide<GraphNode>().radius(d => NR[d.type] + 40).strength(1))
       .alphaDecay(0.015)
       .velocityDecay(0.45);
 
