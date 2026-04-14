@@ -57,10 +57,16 @@ function forceProgressiveLink(baseDistance: number, strengthScale: number) {
       
       const stretch = Math.max(0, dist - baseDistance);
       if (stretch > 0) {
-        // pull scales quadratically with stretch
-        const pull = stretch * stretch * strengthScale * alpha;
-        const pullX = (dx / dist) * pull;
-        const pullY = (dy / dist) * pull;
+        // Clamp the maximum stretch to prevent physics explosions
+        const safeStretch = Math.min(stretch, 500);
+        // pull scales quadratically but is safely clamped
+        const pull = safeStretch * safeStretch * strengthScale * alpha * 0.01;
+        
+        // Ensure pull doesn't go completely infinite just in case
+        const clampedPull = Math.min(pull, 50);
+        
+        const pullX = (dx / dist) * clampedPull;
+        const pullY = (dy / dist) * clampedPull;
 
         target.vx = (target.vx ?? 0) - pullX;
         target.vy = (target.vy ?? 0) - pullY;
