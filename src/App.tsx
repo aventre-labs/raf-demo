@@ -33,15 +33,8 @@ function hhmm(ts: number) { return new Date(ts).toLocaleTimeString([], { hour: '
 const LS_KEY = 'raf-demo-sessions-v3';
 
 export default function App() {
-  const [sessions, setSessions] = useState<Session[]>(() => {
-    try { return JSON.parse(localStorage.getItem(LS_KEY) ?? '[]') as Session[]; } catch { return []; }
-  });
-  const [activeId, setActiveId] = useState<string>(() => {
-    try {
-      const s = JSON.parse(localStorage.getItem(LS_KEY) ?? '[]') as Session[];
-      return s[0]?.id ?? '';
-    } catch { return ''; }
-  });
+  const [sessions, setSessions] = useState<Session[]>([]);
+  const [activeId, setActiveId] = useState<string>('');
 
   const [params, setParams] = useState<RAFParams>({ ...DEFAULT_PARAMS });
   const [running, setRunning] = useState(false);
@@ -195,7 +188,6 @@ export default function App() {
     // Add session to list first so activeSession resolves immediately
     setSessions(prev => {
       const next = [newSession, ...prev];
-      try { localStorage.setItem(LS_KEY, JSON.stringify(next.slice(0, 20))); } catch { /* ignore */ }
       return next;
     });
 
@@ -263,7 +255,6 @@ export default function App() {
           ? { ...s, result, nodes: finalNodes, links: finalLinks, callCount: finalCallCount }
           : s
         );
-        try { localStorage.setItem(LS_KEY, JSON.stringify(next.slice(0, 20))); } catch { /* ignore */ }
         return next;
       });
     } catch (e) {
@@ -276,7 +267,6 @@ export default function App() {
           ? { ...s, error: errorMsg, nodes: [...nodesRef.current], links: [...linksRef.current], callCount: getCallCount() }
           : s
         );
-        try { localStorage.setItem(LS_KEY, JSON.stringify(next.slice(0, 20))); } catch { /* ignore */ }
         return next;
       });
     }
