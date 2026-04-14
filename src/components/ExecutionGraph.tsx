@@ -73,7 +73,8 @@ export function ExecutionGraph({ nodes, links, mode, width, height, onNodeClick,
                           .distance(100)
                           .strength(0.8))
       .force('charge',  d3.forceManyBody().strength(-1500).distanceMax(1500))
-      .force('radial',  d3.forceRadial<GraphNode>(d => (d.depth ?? 0) * 160, width / 2, height / 2).strength(0.8))
+      // Add a gentle repulsive force strictly pushing nodes away from the center
+      .force('radial', d3.forceRadial<GraphNode>(width, width / 2, height / 2).strength(0.05))
       .force('collide', d3.forceCollide<GraphNode>().radius(d => NR[d.type] + 40).strength(1))
       .alphaDecay(0.015)
       .velocityDecay(0.45);
