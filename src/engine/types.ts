@@ -17,6 +17,10 @@ export interface GraphNode {
   vx?: number;
   vy?: number;
   caseType?: 'base' | 'recursive';
+  prompt?: string;
+  systemPrompt?: string;
+  rawResponse?: string;
+  durationMs?: number;
 }
 
 export interface GraphEdge {
@@ -27,8 +31,8 @@ export interface GraphEdge {
 }
 
 export type ExecutionEvent =
-  | { type: 'node_start'; nodeId: string; label: string; nodeType: NodeType; parentId?: string; rafNodeId?: string; edgeType?: 'flow' | 'parallel' | 'dependency' }
-  | { type: 'node_done'; nodeId: string; success: boolean; summary?: string }
+  | { type: 'node_start'; nodeId: string; label: string; nodeType: NodeType; parentId?: string; rafNodeId?: string; edgeType?: 'flow' | 'parallel' | 'dependency'; prompt?: string; systemPrompt?: string }
+  | { type: 'node_done'; nodeId: string; success: boolean; summary?: string; rawResponse?: string; durationMs?: number }
   | { type: 'raf_node_start'; rafNodeId: string; parentRafNodeId?: string; label: string; depth: number }
   | { type: 'raf_node_type'; rafNodeId: string; caseType: 'base' | 'recursive' }
   | { type: 'raf_node_done'; rafNodeId: string; success: boolean; summary?: string }

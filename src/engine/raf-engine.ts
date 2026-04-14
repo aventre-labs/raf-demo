@@ -158,17 +158,20 @@ async function consortium<T>(
   parse: (t: string) => T | null,
 ): Promise<T[]> {
   const cid = nid('consortium');
-  emit({ type: 'node_start', nodeId: cid, label: `${label} (n=${size})`, nodeType: 'consortium', parentId, rafNodeId, edgeType: 'flow' });
+  const userMsg = makeUserMsg();
+  emit({ type: 'node_start', nodeId: cid, label: `${label} (n=${size})`, nodeType: 'consortium', parentId, rafNodeId, edgeType: 'flow', prompt: userMsg, systemPrompt: sys });
   const results: T[] = [];
+  const startCid = Date.now();
 
   await Promise.all(Array.from({ length: size }, async (_, i) => {
     const aid = nid('agent');
-    emit({ type: 'node_start', nodeId: aid, label: `Agent ${i + 1}`, nodeType: 'agent', parentId: cid, rafNodeId, edgeType: 'parallel' });
-    const msgs: ChatMessage[] = [{ role: 'user', content: makeUserMsg() }];
+    emit({ type: 'node_start', nodeId: aid, label: `Agent ${i + 1}`, nodeType: 'agent', parentId: cid, rafNodeId, edgeType: 'parallel', prompt: userMsg, systemPrompt: sys });
+    const msgs: ChatMessage[] = [{ role: 'user', content: userMsg }];
     
     let parsed: T | null = null;
     let attempts = 0;
     let lastText = '';
+    const startAid = Date.now();
     
     while (parsed === null && attempts < 5) {
       attempts++;
@@ -185,11 +188,11 @@ async function consortium<T>(
       }
     }
 
-    emit({ type: 'node_done', nodeId: aid, success: parsed !== null, summary: lastText.slice(0, 80) });
+    emit({ type: 'node_done', nodeId: aid, success: parsed !== null, summary: lastText.slice(0, 80), rawResponse: lastText, durationMs: Date.now() - startAid });
     if (parsed !== null) results.push(parsed);
   }));
 
-  emit({ type: 'node_done', nodeId: cid, success: results.length > 0, summary: `${results.length}/${size} valid` });
+  emit({ type: 'node_done', nodeId: cid, success: results.length > 0, summary: `${results.length}/${size} valid`, durationMs: Date.now() - startCid });
   return results;
 }
 
@@ -211,22 +214,25 @@ async function jury<T>(
   if (options.length === 1) return options[0];
 
   const jid = nid('jury');
-  emit({ type: 'node_start', nodeId: jid, label: `${label} (n=${size})`, nodeType: 'jury', parentId, rafNodeId, edgeType: 'flow' });
+  const userMsg = makeUserMsg();
+  emit({ type: 'node_start', nodeId: jid, label: `${label} (n=${size})`, nodeType: 'jury', parentId, rafNodeId, edgeType: 'flow', prompt: userMsg, systemPrompt: sys });
   const tallies: Record<number, number> = {};
+  const startJid = Date.now();
 
   await Promise.all(Array.from({ length: size }, async (_, i) => {
     const vid = nid('agent');
-    emit({ type: 'node_start', nodeId: vid, label: `Voter ${i + 1}`, nodeType: 'agent', parentId: jid, rafNodeId, edgeType: 'parallel' });
-    const msgs: ChatMessage[] = [{ role: 'user', content: makeUserMsg() }];
+    emit({ type: 'node_start', nodeId: vid, label: `Voter ${i + 1}`, nodeType: 'agent', parentId: jid, rafNodeId, edgeType: 'parallel', prompt: userMsg, systemPrompt: sys });
+    const msgs: ChatMessage[] = [{ role: 'user', content: userMsg }];
+    const startVid = Date.now();
     const r = await callLLM(msgs, sys, topK, MAX_LLM_CALLS);
     const raw = r.text.trim().replace(/[^0-9]/g, '');
     const idx = Math.max(0, Math.min(parseInt(raw || '0'), options.length - 1));
     tallies[idx] = (tallies[idx] ?? 0) + 1;
-    emit({ type: 'node_done', nodeId: vid, success: true, summary: `→ option ${idx}` });
+    emit({ type: 'node_done', nodeId: vid, success: true, summary: `→ option ${idx}`, rawResponse: r.text, durationMs: Date.now() - startVid });
   }));
 
   const winner = Number(Object.entries(tallies).sort((a, b) => b[1] - a[1])[0]?.[0] ?? 0);
-  emit({ type: 'node_done', nodeId: jid, success: true, summary: `Winner: #${winner} (${tallies[winner] ?? 0}/${size} votes)` });
+  emit({ type: 'node_done', nodeId: jid, success: true, summary: `Winner: #${winner} (${tallies[winner] ?? 0}/${size} votes)`, durationMs: Date.now() - startJid });
   return options[winner] ?? options[0];
 }
 
@@ -254,24 +260,26 @@ async function runErrorCorrection(
 
   // Step 1: Error finder jury
   const efid = nid('jury');
-  emit({ type: 'node_start', nodeId: efid, label: `Error Finder Jury (n=${params.errorFinderJurySize})`, nodeType: 'jury', parentId: rafNodeId, rafNodeId, edgeType: 'flow' });
+  const efUserMsg = `Node name: ${name}\nDepth: ${depth}\nProblem: ${context.slice(0, 400)}\nExecution result: ${previousAnswer.slice(0, 300)}\nFailure analysis: ${failureSummary.slice(0, 300)}\n\n${isRoot ? 'This is the ROOT node — answer YES.' : 'Is this node responsible for the failure?'}`;
+  emit({ type: 'node_start', nodeId: efid, label: `Error Finder Jury (n=${params.errorFinderJurySize})`, nodeType: 'jury', parentId: rafNodeId, rafNodeId, edgeType: 'flow', prompt: efUserMsg, systemPrompt: SYS.errorFinderJury });
+  const startEfid = Date.now();
 
   let yesVotes = 0;
-  const efUserMsg = `Node name: ${name}\nDepth: ${depth}\nProblem: ${context.slice(0, 400)}\nExecution result: ${previousAnswer.slice(0, 300)}\nFailure analysis: ${failureSummary.slice(0, 300)}\n\n${isRoot ? 'This is the ROOT node — answer YES.' : 'Is this node responsible for the failure?'}`;
 
   await Promise.all(Array.from({ length: params.errorFinderJurySize }, async (_, i) => {
     const vid = nid('agent');
-    emit({ type: 'node_start', nodeId: vid, label: `EF Voter ${i + 1}`, nodeType: 'agent', parentId: efid, rafNodeId, edgeType: 'parallel' });
+    emit({ type: 'node_start', nodeId: vid, label: `EF Voter ${i + 1}`, nodeType: 'agent', parentId: efid, rafNodeId, edgeType: 'parallel', prompt: efUserMsg, systemPrompt: SYS.errorFinderJury });
+    const startVid = Date.now();
     const r = isRoot
       ? { text: 'YES' }
       : await callLLM([{ role: 'user', content: efUserMsg }], SYS.errorFinderJury, params.minTopK, MAX_LLM_CALLS);
     const vote = r.text.trim().toUpperCase().startsWith('Y') ? 'YES' : 'NO';
     if (vote === 'YES') yesVotes++;
-    emit({ type: 'node_done', nodeId: vid, success: true, summary: vote });
+    emit({ type: 'node_done', nodeId: vid, success: true, summary: vote, rawResponse: r.text, durationMs: Date.now() - startVid });
   }));
 
   const isOrigin = isRoot || yesVotes > Math.floor(params.errorFinderJurySize / 2);
-  emit({ type: 'node_done', nodeId: efid, success: true, summary: isOrigin ? `Origin: YES (${yesVotes}/${params.errorFinderJurySize})` : `Origin: NO (${yesVotes}/${params.errorFinderJurySize})` });
+  emit({ type: 'node_done', nodeId: efid, success: true, summary: isOrigin ? `Origin: YES (${yesVotes}/${params.errorFinderJurySize})` : `Origin: NO (${yesVotes}/${params.errorFinderJurySize})`, durationMs: Date.now() - startEfid });
 
   if (!isOrigin) {
     return { steeringAdvice: '', isOrigin: false };
@@ -350,25 +358,28 @@ export async function execRafNode(
 
   // ── Base Case Vote ────────────────────────────────────────────────────────
   const voteJuryId = nid('jury');
-  emit({ type: 'node_start', nodeId: voteJuryId, label: `Base Case Jury (n=${params.baseCaseJurySize})`, nodeType: 'jury', parentId: rid, rafNodeId: rid, edgeType: 'flow' });
+  const votePrompt = `Depth: ${depth}/${MAX_RECURSION_DEPTH}\n\nTask to classify:\n${ctx.slice(0, 800)}`;
+  emit({ type: 'node_start', nodeId: voteJuryId, label: `Base Case Jury (n=${params.baseCaseJurySize})`, nodeType: 'jury', parentId: rid, rafNodeId: rid, edgeType: 'flow', prompt: votePrompt, systemPrompt: SYS.baseCaseVote });
 
   const voteTallies: Record<string, number> = {};
+  const startVoteJury = Date.now();
   await Promise.all(Array.from({ length: params.baseCaseJurySize }, async (_, i) => {
     const vid = nid('agent');
-    emit({ type: 'node_start', nodeId: vid, label: `Voter ${i + 1}`, nodeType: 'agent', parentId: voteJuryId, rafNodeId: rid, edgeType: 'parallel' });
+    emit({ type: 'node_start', nodeId: vid, label: `Voter ${i + 1}`, nodeType: 'agent', parentId: voteJuryId, rafNodeId: rid, edgeType: 'parallel', prompt: votePrompt, systemPrompt: SYS.baseCaseVote });
+    const startVid = Date.now();
     const r = await callLLM(
-      [{ role: 'user', content: `Depth: ${depth}/${MAX_RECURSION_DEPTH}\n\nTask to classify:\n${ctx.slice(0, 800)}` }],
+      [{ role: 'user', content: votePrompt }],
       SYS.baseCaseVote, tk, MAX_LLM_CALLS,
     );
     const vote = r.text.toLowerCase().includes('base') ? 'Base Case' : 'Recursive Case';
     voteTallies[vote] = (voteTallies[vote] ?? 0) + 1;
-    emit({ type: 'node_done', nodeId: vid, success: true, summary: vote });
+    emit({ type: 'node_done', nodeId: vid, success: true, summary: vote, rawResponse: r.text, durationMs: Date.now() - startVid });
   }));
 
   // Force base case at max depth to prevent infinite recursion
   const isBase = depth >= MAX_RECURSION_DEPTH
     || (voteTallies['Base Case'] ?? 0) > (voteTallies['Recursive Case'] ?? 0);
-  emit({ type: 'node_done', nodeId: voteJuryId, success: true, summary: isBase ? '→ Base Case' : '→ Recursive Case' });
+  emit({ type: 'node_done', nodeId: voteJuryId, success: true, summary: isBase ? '→ Base Case' : '→ Recursive Case', durationMs: Date.now() - startVoteJury });
   emit({ type: 'raf_node_type', rafNodeId: rid, caseType: isBase ? 'base' : 'recursive' });
 
   if (isBase) {
@@ -401,12 +412,14 @@ export async function execRafNode(
 
     // Execute
     const eid = nid('agent');
-    emit({ type: 'node_start', nodeId: eid, label: 'Execute', nodeType: 'agent', parentId: rid, rafNodeId: rid, edgeType: 'flow' });
+    const execPrompt = `Problem:\n${ctx.slice(0, 1200)}\n\nApproach: ${bestDesign.approach}\nTools to use: ${bestDesign.tools_needed?.join(', ') || 'none'}\n\nSolve step by step:`;
+    emit({ type: 'node_start', nodeId: eid, label: 'Execute', nodeType: 'agent', parentId: rid, rafNodeId: rid, edgeType: 'flow', prompt: execPrompt, systemPrompt: SYS.execute });
+    const startEid = Date.now();
     const execR = await callLLM(
-      [{ role: 'user', content: `Problem:\n${ctx.slice(0, 1200)}\n\nApproach: ${bestDesign.approach}\nTools to use: ${bestDesign.tools_needed?.join(', ') || 'none'}\n\nSolve step by step:` }],
+      [{ role: 'user', content: execPrompt }],
       SYS.execute, params.maxTopK, MAX_LLM_CALLS,
     );
-    emit({ type: 'node_done', nodeId: eid, success: true, summary: execR.text.slice(0, 100) });
+    emit({ type: 'node_done', nodeId: eid, success: true, summary: execR.text.slice(0, 100), rawResponse: execR.text, durationMs: Date.now() - startEid });
 
     const answerMatch = execR.text.match(/####\s*(.+)$/m);
     const answer = answerMatch?.[1]?.trim() ?? execR.text.slice(-200).trim();

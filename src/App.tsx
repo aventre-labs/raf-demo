@@ -159,6 +159,8 @@ export default function App() {
         active: true,
         rafNodeId: ev.rafNodeId,
         depth: parentNode ? (parentNode.depth ?? 0) + 0.5 : 0,
+        prompt: ev.prompt,
+        systemPrompt: ev.systemPrompt,
         ...(parentNode
           ? { x: (parentNode.x ?? 0) + (Math.random() - 0.5) * 60,
               y: (parentNode.y ?? 0) + 50 }
@@ -183,6 +185,8 @@ export default function App() {
       if (node) {
         node.active = false;
         node.success = ev.success;
+        if (ev.rawResponse) node.rawResponse = ev.rawResponse;
+        if (ev.durationMs) node.durationMs = ev.durationMs;
       }
       setGraphNodes([...nodesRef.current]);
     }
@@ -602,7 +606,7 @@ export default function App() {
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: 20 }}
-                className="absolute top-4 right-4 w-72 bg-card/95 backdrop-blur shadow-xl border border-border rounded-lg overflow-hidden flex flex-col z-10"
+                className="absolute top-4 right-4 w-[400px] bg-card/95 backdrop-blur shadow-xl border border-border rounded-lg overflow-hidden flex flex-col z-10"
               >
                 <div className="px-3 py-2 border-b border-border flex justify-between items-center shrink-0">
                   <div className="flex items-center gap-2">
@@ -613,29 +617,56 @@ export default function App() {
                     ✕
                   </button>
                 </div>
-                <div className="p-3 text-xs overflow-y-auto max-h-64">
-                  <div className="mb-2">
-                    <span className="text-[10px] uppercase text-muted-foreground">Type</span>
-                    <p className="capitalize">{selectedNode.type.replace('-', ' ')}</p>
+                <div className="p-3 text-xs overflow-y-auto max-h-[80vh] flex flex-col gap-3">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <span className="text-[10px] uppercase text-muted-foreground">Type</span>
+                      <p className="capitalize">{selectedNode.type.replace('-', ' ')}</p>
+                    </div>
+                    {selectedNode.depth !== undefined && (
+                      <div>
+                        <span className="text-[10px] uppercase text-muted-foreground">Depth</span>
+                        <p>{selectedNode.depth}</p>
+                      </div>
+                    )}
+                    {selectedNode.success !== undefined && (
+                      <div>
+                        <span className="text-[10px] uppercase text-muted-foreground">Status</span>
+                        <p className={selectedNode.success ? 'text-green-400' : 'text-red-400'}>
+                          {selectedNode.success ? 'Success' : 'Failed'}
+                        </p>
+                      </div>
+                    )}
+                    {selectedNode.durationMs !== undefined && (
+                      <div>
+                        <span className="text-[10px] uppercase text-muted-foreground">Duration</span>
+                        <p>{(selectedNode.durationMs / 1000).toFixed(2)}s</p>
+                      </div>
+                    )}
                   </div>
-                  {selectedNode.depth !== undefined && (
-                    <div className="mb-2">
-                      <span className="text-[10px] uppercase text-muted-foreground">Depth</span>
-                      <p>{selectedNode.depth}</p>
-                    </div>
-                  )}
-                  {selectedNode.success !== undefined && (
-                    <div className="mb-2">
-                      <span className="text-[10px] uppercase text-muted-foreground">Status</span>
-                      <p className={selectedNode.success ? 'text-green-400' : 'text-red-400'}>
-                        {selectedNode.success ? 'Success' : 'Failed'}
-                      </p>
-                    </div>
-                  )}
+                  
                   <div>
-                    <span className="text-[10px] uppercase text-muted-foreground">Details</span>
+                    <span className="text-[10px] uppercase text-muted-foreground">Summary</span>
                     <p className="text-muted-foreground leading-relaxed mt-0.5 whitespace-pre-wrap">{selectedNode.detail}</p>
                   </div>
+
+                  {selectedNode.prompt && (
+                    <div className="mt-2">
+                      <span className="text-[10px] uppercase text-muted-foreground">Input Prompt</span>
+                      <div className="bg-muted/50 p-2 rounded mt-1 overflow-x-auto whitespace-pre-wrap text-[10px] font-mono border border-border/50 text-muted-foreground">
+                        {selectedNode.prompt}
+                      </div>
+                    </div>
+                  )}
+
+                  {selectedNode.rawResponse && (
+                    <div className="mt-2">
+                      <span className="text-[10px] uppercase text-muted-foreground">Raw LLM Response</span>
+                      <div className="bg-muted p-2 rounded mt-1 overflow-x-auto whitespace-pre-wrap text-[10px] font-mono border border-border/50 text-foreground">
+                        {selectedNode.rawResponse}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </motion.div>
             )}
