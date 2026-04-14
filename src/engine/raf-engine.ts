@@ -468,13 +468,19 @@ export async function execRafNode(
     // Execute children respecting dependsOn order
     const childResults: Record<string, RafResult> = {};
     const done = new Set<string>();
+    const validDepNames = new Set(chosenPlan.map(p => p.name));
 
     const execChild = async (plan: Plan): Promise<void> => {
-      // Wait for dependencies
-      while (plan.dependsOn.some(d => !done.has(d))) {
-        await new Promise(r => setTimeout(r, 30));
+      // Wait for dependencies (only those that actually exist in the plan to prevent infinite hangs)
+      const validDeps = (plan.dependsOn || []).filter(d => validDepNames.has(d));
+      let waitLoops = 0;
+      
+      while (validDeps.some(d => !done.has(d)) && waitLoops < 300) {
+        await new Promise(r => setTimeout(r, 100));
+        waitLoops++;
       }
-      const depCtx = plan.dependsOn.map(d => childResults[d]?.summary ?? '').filter(Boolean).join('\n');
+      
+      const depCtx = (plan.dependsOn || []).map(d => childResults[d]?.summary ?? '').filter(Boolean).join('\n');
       childResults[plan.name] = await execRafNode(
         plan.context, params, depth + 1, plan.name, rid, depCtx || undefined,
       );

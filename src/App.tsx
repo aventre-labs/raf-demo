@@ -437,7 +437,7 @@ export default function App() {
               </div>
               {/* Results */}
               <ScrollArea className="flex-1">
-                <ResultsPanel session={activeSession} running={running} liveCallCount={liveCallCount} />
+                <ResultsPanel session={activeSession} running={running} liveCallCount={liveCallCount} nodes={graphNodes} />
               </ScrollArea>
             </motion.div>
           ) : (
