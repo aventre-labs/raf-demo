@@ -258,6 +258,24 @@ export default function App() {
       return;
     }
 
+    if (ev.type === 'edge_add') {
+      const srcId = mkId(ev.source);
+      const tgtId = mkId(ev.target);
+      
+      // Ensure we don't duplicate links
+      const linkId = `${srcId}->${tgtId}`;
+      if (!linksRef.current.find(l => l.id === linkId)) {
+        linksRef.current = [...linksRef.current, {
+          id: linkId,
+          source: srcId,
+          target: tgtId,
+          edgeType: ev.edgeType,
+        }];
+        setGraphLinks([...linksRef.current]);
+      }
+      return;
+    }
+
     if (ev.type === 'node_done') {
       const node = nodesRef.current.find(n => n.id === mkId(ev.nodeId));
       if (node) {

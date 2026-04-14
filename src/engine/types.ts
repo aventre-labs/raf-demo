@@ -41,6 +41,7 @@ export type ExecutionEvent =
   | { type: 'raf_node_done'; rafNodeId: string; success: boolean; summary?: string }
   | { type: 'raf_node_error'; rafNodeId: string; isOrigin: boolean }
   | { type: 'raf_node_abandoned'; rafNodeId: string }
+  | { type: 'edge_add'; source: string; target: string; edgeType: 'flow' | 'parallel' | 'dependency' }
   | { type: 'call_count'; count: number }
   | { type: 'json_stats'; attempts: number; successes: number };
 

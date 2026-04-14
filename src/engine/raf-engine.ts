@@ -22,7 +22,7 @@ const SYS = {
   baseCaseVote: `You are a task classifier for a Recursive Agent Framework (RAF).
 Your job is to decide if a task should be solved directly (BASE CASE) or broken down into smaller sub-tasks (RECURSIVE CASE).
 
-Classify as BASE CASE if the task can be solved by an LLM in a single pass without needing complex, multi-step logical chains or parallel fact-finding.
+Classify as BASE CASE ONLY if the task is UTTERLY TRIVIAL and can be solved by an LLM in a single pass without needing complex, multi-step logical chains or parallel fact-finding.
 Examples of BASE CASE:
   - Answering a direct factual question.
   - Analyzing a specific snippet of code and identifying the exact bug or fix.
@@ -30,12 +30,13 @@ Examples of BASE CASE:
   - Writing a short script or function from clear requirements.
 
 Classify as RECURSIVE CASE if the task requires:
-  - Breaking a large problem into distinct, independent sub-problems.
-  - Designing a complex system with multiple interacting parts.
+  - Breaking a problem into distinct, independent sub-problems.
+  - Designing a system with multiple interacting parts.
   - Mathematical proofs or multi-stage logical deduction.
-  - Solving a problem where later steps heavily depend on the complex, uncertain outcome of earlier steps.
+  - Solving a problem where later steps depend on the complex outcome of earlier steps.
+  - Any task that requires significant planning.
 
-When in doubt, if the problem looks like a standard prompt an LLM handles well, choose BASE CASE. If the problem is massive and clearly needs breaking down, choose RECURSIVE CASE.
+When in doubt, ALWAYS choose RECURSIVE CASE. We want to heavily favor deep decomposition. Only choose BASE CASE if it is blatantly obvious and short.
 
 Respond with EXACTLY one of: "Base Case" or "Recursive Case" — nothing else.`,
 
@@ -90,7 +91,8 @@ Your task is to break down a complex problem into 2-4 distinct, actionable sub-t
 
 Guidelines:
 - DO NOT create trivial or microscopic sub-tasks (e.g., "read the string", "parse the data"). Sub-tasks should represent substantial chunks of work.
-- If a sub-task can be easily solved by a single LLM prompt, it's a good sub-task.
+- IMPORTANT: Sub-tasks should not be too complex. If a sub-task is still a massive problem (like "solve the whole backend"), break it down further here, or leave it so the next layer of agents will break it down.
+- Avoid flat lists of tasks where possible. We want deep, recursive structures.
 - Sub-tasks can be run in parallel if they don't depend on each other.
 - Use dependsOn to chain tasks ONLY if a task strictly requires the output of another task to proceed.
 - Name tasks descriptively (e.g. "analyze-root-cause", "draft-implementation", "verify-solution").
@@ -523,8 +525,21 @@ export async function execRafNode(
 
     // Execute children respecting dependsOn order
     const childResults: Record<string, RafResult> = {};
-    const done = new Set<string>();
     const validDepNames = new Set(chosenPlan.map(p => p.name));
+    
+    const childRids: Record<string, string> = {};
+    for (const plan of chosenPlan) {
+      childRids[plan.name] = nid('raf');
+    }
+
+    for (const plan of chosenPlan) {
+      const validDeps = (plan.dependsOn || []).filter(d => validDepNames.has(d));
+      for (const dep of validDeps) {
+        emit({ type: 'edge_add', source: childRids[dep], target: childRids[plan.name], edgeType: 'dependency' });
+      }
+    }
+
+    const done = new Set<string>();
 
     const execChild = async (plan: Plan): Promise<void> => {
       // Wait for dependencies (only those that actually exist in the plan to prevent infinite hangs)
@@ -538,7 +553,7 @@ export async function execRafNode(
       
       const depCtx = (plan.dependsOn || []).map(d => childResults[d]?.summary ?? '').filter(Boolean).join('\n');
       childResults[plan.name] = await execRafNode(
-        plan.context, params, depth + 1, plan.name, rid, depCtx || undefined,
+        plan.context, params, depth + 1, plan.name, rid, depCtx || undefined, undefined, 0, childRids[plan.name]
       );
       done.add(plan.name);
     };
