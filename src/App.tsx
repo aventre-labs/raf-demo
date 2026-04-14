@@ -39,7 +39,7 @@ export default function App() {
 
   const [params, setParams] = useState<RAFParams>({ ...DEFAULT_PARAMS });
   const [running, setRunning] = useState(false);
-  const [graphMode, setGraphMode] = useState<GraphMode>('full');
+  const [graphMode, setGraphMode] = useState<GraphMode>('simplified');
 
   // Controlled tab state — this is the fix for the benchmark crash
   const [activeTab, setActiveTab] = useState<'custom' | 'benchmarks'>('custom');
@@ -316,13 +316,17 @@ export default function App() {
     setGraphLinks([...activeSession.links]);
   }, [activeId]); // eslint-disable-line
 
-  const legend = [
+  const legend = graphMode === 'full' ? [
     { c: '#00e5ff', l: 'RafNode (Pending)' },
     { c: '#69ff47', l: 'Base Case / Agent' },
     { c: '#f59e0b', l: 'Recursive Case' },
     { c: '#e040fb', l: 'Jury' },
     { c: '#ffeb3b', l: 'Consortium' },
     { c: '#f43f5e', l: 'Recovery' },
+  ] : [
+    { c: '#00e5ff', l: 'RafNode (Pending)' },
+    { c: '#69ff47', l: 'Base Case' },
+    { c: '#f59e0b', l: 'Recursive Case' },
   ];
 
   return (
