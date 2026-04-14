@@ -73,8 +73,8 @@ export function ExecutionGraph({ nodes, links, mode, width, height, onNodeClick,
                           .distance(80)
                           .strength(0.7))
       .force('charge',  d3.forceManyBody().strength(-800).distanceMax(1000))
-      .force('x',       d3.forceX(width / 2).strength(0.01))
-      .force('y',       d3.forceY<GraphNode>(d => 80 + (d.depth ?? 0) * 120).strength(0.8))
+      .force('x',       d3.forceX(width / 2).strength(0.05))
+      .force('y',       d3.forceY(height / 2).strength(0.05))
       .force('collide', d3.forceCollide<GraphNode>().radius(d => NR[d.type] + 30).strength(1))
       .alphaDecay(0.015)
       .velocityDecay(0.45);
@@ -107,12 +107,12 @@ export function ExecutionGraph({ nodes, links, mode, width, height, onNodeClick,
       const isAddition = nodes.length > prevCountRef.current;
       prevCountRef.current = nodes.length;
 
-      // ── Pin root node to graph center horizontally, top vertically ────────
-      // Root node (depth=0) is held at (cx, 100) so the tree grows downwards.
+      // ── Pin root node to graph center ────────
+      // Root node (depth=0) is held at the center so the graph grows radially.
       // We don't pin after the run completes (when active=false) so the user
       // can drag it freely once the layout has settled.
       const cx = width  / 2;
-      const cy = 100;
+      const cy = height / 2;
       nodes.forEach(n => {
         if (n.depth === 0) {
           n.fx = n.active ? cx : null;
