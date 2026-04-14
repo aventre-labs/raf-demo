@@ -9,11 +9,10 @@ const API_URL = 'https://chatjimmy.ai/api/chat';
 // corsproxy.io is primary; cors.eu.org is a cors-anywhere clone that handles
 // all HTTP methods including POST with arbitrary bodies.
 const PROXIES: Array<(u: string) => string> = [
-  u => `https://cors-proxy.fringe.zone/${u}`,
-  u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
-  u => `https://thingproxy.freeboard.io/fetch/${u}`,
-  u => `https://corsproxy.io/?${encodeURIComponent(u)}`,
   u => `https://cors.eu.org/${u}`,
+  u => `https://corsproxy.io/?${encodeURIComponent(u)}`,
+  u => `https://cors-proxy.fringe.zone/${u}`,
+  u => `https://thingproxy.freeboard.io/fetch/${u}`,
 ];
 
 let _proxyIdx = 0;           // rotates on 429
