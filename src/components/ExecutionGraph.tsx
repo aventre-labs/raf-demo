@@ -70,13 +70,14 @@ export function ExecutionGraph({ nodes, links, mode, width, height, onNodeClick,
     simRef.current = d3.forceSimulation<GraphNode>([])
       .force('link',    d3.forceLink<GraphNode, GraphEdge>([])
                           .id(d => d.id)
-                          .distance(90)
-                          .strength(0.4))
-      .force('charge',  d3.forceManyBody().strength(-320).distanceMax(400))
-      .force('center',  d3.forceCenter(width / 2, height / 2).strength(0.06))
-      .force('collide', d3.forceCollide<GraphNode>().radius(d => NR[d.type] + 14).strength(0.85))
-      .alphaDecay(0.022)
-      .velocityDecay(0.38);
+                          .distance(70)
+                          .strength(0.6))
+      .force('charge',  d3.forceManyBody().strength(-200).distanceMax(500))
+      .force('x',       d3.forceX(width / 2).strength(0.05))
+      .force('y',       d3.forceY<GraphNode>(d => 100 + (d.depth ?? 0) * 120).strength(0.4))
+      .force('collide', d3.forceCollide<GraphNode>().radius(d => NR[d.type] + 16).strength(0.9))
+      .alphaDecay(0.015)
+      .velocityDecay(0.45);
 
     simRef.current.on('tick', () => {
       if (!zlRef.current) return;
@@ -106,12 +107,12 @@ export function ExecutionGraph({ nodes, links, mode, width, height, onNodeClick,
       const isAddition = nodes.length > prevCountRef.current;
       prevCountRef.current = nodes.length;
 
-      // ── Pin root node to graph center ─────────────────────────────────────
-      // Root node (depth=0) is held at (cx, cy) so the tree radiates outward.
+      // ── Pin root node to graph center horizontally, top vertically ────────
+      // Root node (depth=0) is held at (cx, 100) so the tree grows downwards.
       // We don't pin after the run completes (when active=false) so the user
       // can drag it freely once the layout has settled.
       const cx = width  / 2;
-      const cy = height / 2;
+      const cy = 100;
       nodes.forEach(n => {
         if (n.depth === 0) {
           n.fx = n.active ? cx : null;

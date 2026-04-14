@@ -108,8 +108,8 @@ export default function App() {
         rafNodeId: ev.rafNodeId,
         depth: ev.depth,
         ...(parentNode
-          ? { x: (parentNode.x ?? 0) + Math.cos(angle) * spread,
-              y: (parentNode.y ?? 0) + Math.sin(angle) * spread }
+          ? { x: (parentNode.x ?? 0) + (Math.random() - 0.5) * spread,
+              y: (parentNode.y ?? 0) + spread * 0.8 }
           : {}),
       };
       nodesRef.current = [...nodesRef.current, node];
@@ -158,9 +158,10 @@ export default function App() {
         detail: `${ev.nodeType}: ${ev.label}`,
         active: true,
         rafNodeId: ev.rafNodeId,
+        depth: parentNode ? (parentNode.depth ?? 0) + 0.5 : 0,
         ...(parentNode
-          ? { x: (parentNode.x ?? 0) + Math.cos(angle) * 55,
-              y: (parentNode.y ?? 0) + Math.sin(angle) * 55 }
+          ? { x: (parentNode.x ?? 0) + (Math.random() - 0.5) * 60,
+              y: (parentNode.y ?? 0) + 50 }
           : {}),
       };
       nodesRef.current = [...nodesRef.current, node];
@@ -770,14 +771,14 @@ function ResultsPanel({
             </Badge>
           )}
         </div>
-        {r.answer && (
+        {r.answer !== undefined && (
           <div className="font-mono text-base font-bold text-foreground leading-tight break-all">
-            {r.answer.slice(0, 500)}
+            {String(r.answer).slice(0, 500)}
           </div>
         )}
         {r.summary && (
           <p className="text-xs text-muted-foreground mt-2 leading-relaxed">
-            {r.summary.slice(0, 400)}
+            {String(r.summary).slice(0, 400)}
           </p>
         )}
       </div>
@@ -793,10 +794,10 @@ function ResultsPanel({
               }`} />
               <div className="min-w-0">
                 <span className="font-medium text-foreground">{n}</span>
-                {child.answer && (
-                  <span className="text-primary ml-1.5 font-mono">→ {child.answer.slice(0, 80)}</span>
+                {child.answer !== undefined && (
+                  <span className="text-primary ml-1.5 font-mono">→ {String(child.answer).slice(0, 80)}</span>
                 )}
-                <p className="text-muted-foreground leading-relaxed">{child.summary.slice(0, 120)}</p>
+                <p className="text-muted-foreground leading-relaxed">{child.summary ? String(child.summary).slice(0, 120) : ''}</p>
               </div>
             </div>
           ))}
