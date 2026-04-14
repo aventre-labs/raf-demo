@@ -349,6 +349,7 @@ export async function execRafNode(
   const isBase = depth >= MAX_RECURSION_DEPTH
     || (voteTallies['Base Case'] ?? 0) > (voteTallies['Recursive Case'] ?? 0);
   emit({ type: 'node_done', nodeId: voteJuryId, success: true, summary: isBase ? '→ Base Case' : '→ Recursive Case' });
+  emit({ type: 'raf_node_type', rafNodeId: rid, caseType: isBase ? 'base' : 'recursive' });
 
   if (isBase) {
     // ── BASE CASE ────────────────────────────────────────────────────────────

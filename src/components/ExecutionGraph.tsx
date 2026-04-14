@@ -160,18 +160,26 @@ export function ExecutionGraph({ nodes, links, mode, width, height, onNodeClick,
         .data(vNodes, d => d.id);
       nSel.exit().transition().duration(180).attr('opacity', 0).remove();
 
+      const getNodeColor = (d: GraphNode) => {
+        if (d.type === 'raf-node') {
+          if (d.caseType === 'base') return '#69ff47'; // Green
+          if (d.caseType === 'recursive') return '#f59e0b'; // Orange/Amber
+        }
+        return NC[d.type] ?? '#888';
+      };
+
       const nEnter = nSel.enter().append('g')
         .attr('class', d => `ngrp ngrp-${d.type}`)
         .style('cursor', 'grab');
       nEnter.append('circle').attr('r', 0).attr('filter', 'url(#glow)')
-        .attr('fill', d => NC[d.type] ?? '#888')
+        .attr('fill', getNodeColor)
         .attr('stroke', 'rgba(255,255,255,0.2)').attr('stroke-width', 1.5)
         .transition().duration(420).attr('r', d => NR[d.type]);
 
       const nMerge = nEnter.merge(nSel);
       nMerge.attr('class', d => `ngrp ngrp-${d.type}${d.active ? ' raf-node-active' : ''}`);
       nMerge.select('circle')
-        .attr('fill', d => NC[d.type] ?? '#888')
+        .attr('fill', getNodeColor)
         .attr('opacity', d => d.active ? 1 : 0.75);
 
       nMerge

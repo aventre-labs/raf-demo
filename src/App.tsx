@@ -117,6 +117,15 @@ export default function App() {
       return;
     }
 
+    if (ev.type === 'raf_node_type') {
+      const node = nodesRef.current.find(n => n.id === mkId(ev.rafNodeId));
+      if (node) {
+        node.caseType = ev.caseType;
+      }
+      setGraphNodes([...nodesRef.current]);
+      return;
+    }
+
     if (ev.type === 'raf_node_done') {
       const node = nodesRef.current.find(n => n.id === mkId(ev.rafNodeId));
       if (node) {
@@ -287,10 +296,11 @@ export default function App() {
   }, [activeId]); // eslint-disable-line
 
   const legend = [
-    { c: '#00e5ff', l: 'RafNode' },
+    { c: '#00e5ff', l: 'RafNode (Pending)' },
+    { c: '#69ff47', l: 'Base Case / Agent' },
+    { c: '#f59e0b', l: 'Recursive Case' },
     { c: '#e040fb', l: 'Jury' },
     { c: '#ffeb3b', l: 'Consortium' },
-    { c: '#69ff47', l: 'Agent' },
     { c: '#f43f5e', l: 'Recovery' },
   ];
 
