@@ -22,21 +22,14 @@ const SYS = {
   baseCaseVote: `You are a task classifier for a Recursive Agent Framework (RAF).
 Your job is to decide if a task should be solved directly (BASE CASE) or broken down into smaller sub-tasks (RECURSIVE CASE).
 
-Classify as BASE CASE ONLY if the task is UTTERLY TRIVIAL and can be solved by an LLM in a single pass without needing complex, multi-step logical chains or parallel fact-finding.
+Classify as BASE CASE if the task can be solved directly by an LLM in a single pass or by following a straight sequence of steps.
 Examples of BASE CASE:
-  - Answering a direct factual question.
-  - Analyzing a specific snippet of code and identifying the exact bug or fix.
-  - Doing straightforward math or logic that doesn't require deep algorithmic tracing.
-  - Writing a short script or function from clear requirements.
+  - Answering a factual question.
+  - Doing math or logic that can be traced sequentially.
+  - Writing or fixing a code snippet.
 
-Classify as RECURSIVE CASE if the task requires:
-  - Breaking a problem into distinct, independent sub-problems.
-  - Designing a system with multiple interacting parts.
-  - Mathematical proofs or multi-stage logical deduction.
-  - Solving a problem where later steps depend on the complex outcome of earlier steps.
-  - Any task that requires significant planning.
-
-When in doubt, ALWAYS choose RECURSIVE CASE. We want to heavily favor deep decomposition. Only choose BASE CASE if it is blatantly obvious and short.
+Classify as RECURSIVE CASE ONLY if the task is complex enough that it MUST be broken down into MULTIPLE distinct sub-tasks that can be solved either in parallel or in a dependency chain.
+If a task is just a single problem that can't be split into multiple separate pieces of work, it is a BASE CASE. Do not choose RECURSIVE CASE just to pass the whole problem down to another agent.
 
 Respond with EXACTLY one of: "Base Case" or "Recursive Case" — nothing else.`,
 
@@ -89,18 +82,17 @@ Respond ONLY with the index number. Nothing else.`,
   planAgent: `You are a recursive decomposition planner for a Recursive Agent Framework.
 Your task is to break down a complex problem into 2-4 distinct, actionable sub-tasks.
 
-Guidelines:
-- DO NOT create trivial or microscopic sub-tasks (e.g., "read the string", "parse the data"). Sub-tasks should represent substantial chunks of work.
-- IMPORTANT: Sub-tasks should not be too complex. If a sub-task is still a massive problem (like "solve the whole backend"), break it down further here, or leave it so the next layer of agents will break it down.
-- Avoid flat lists of tasks where possible. We want deep, recursive structures.
-- Sub-tasks can be run in parallel if they don't depend on each other.
-- Use dependsOn to chain tasks ONLY if a task strictly requires the output of another task to proceed.
-- Name tasks descriptively (e.g. "analyze-root-cause", "draft-implementation", "verify-solution").
+CRITICAL RULES:
+1. You MUST return MULTIPLE (2 to 4) sub-tasks. NEVER return a single sub-task. If you return only one sub-task, you fail.
+2. The sub-tasks should form a DAG (Directed Acyclic Graph). Some tasks can run in parallel, while others might depend on earlier ones.
+3. Use \`dependsOn\` to specify if a sub-task strictly requires the output of another sub-task in this list. 
+4. DO NOT just restate the main problem. Break it into pieces.
+5. Name tasks descriptively (e.g. "analyze-root-cause", "draft-implementation", "verify-solution").
 
 Output JSON array:
 [
-  {"name": "descriptive-task-id", "context": "FULL self-contained description of this sub-task, including all relevant info from the parent. The sub-task agent will ONLY see this context.", "dependsOn": []},
-  {"name": "next-task", "context": "...", "dependsOn": ["descriptive-task-id"]}
+  {"name": "task-1", "context": "FULL self-contained description of this sub-task...", "dependsOn": []},
+  {"name": "task-2", "context": "...", "dependsOn": ["task-1"]}
 ]
 
 IMPORTANT: Each sub-task's "context" must be fully self-contained. Provide all necessary code, text, or rules inside the "context".
@@ -294,8 +286,10 @@ async function runErrorCorrection(
   const recoveryUserMsg = `FAILED PROBLEM: ${String(context || '')?.slice(0, 600)}\n\nPREVIOUS APPROACH RESULT: ${String(previousAnswer || '')?.slice(0, 400)}\n\nFAILURE REASON: ${String(failureSummary || '')?.slice(0, 300)}\n\nPropose a completely different approach.`;
 
   const tryParseRecovery = (t: string): Recovery | null => {
-    try { return JSON.parse(t.trim()); }
-    catch { return null; }
+    try {
+      const cleaned = t.replace(/```(?:json)?\n?/g, '').trim();
+      return JSON.parse(cleaned);
+    } catch { return null; }
   };
 
   const recoveries = await consortium<Recovery>(
@@ -395,7 +389,8 @@ export async function execRafNode(
 
     const tryParseDesign = (t: string): Design | null => {
       try {
-        const obj = JSON.parse(t.trim());
+        const cleaned = t.replace(/```(?:json)?\n?/g, '').trim();
+        const obj = JSON.parse(cleaned);
         return obj && obj.approach ? obj : null;
       } catch {
         return null;
@@ -435,7 +430,8 @@ export async function execRafNode(
     type Analysis = { success: boolean; info: string };
     const tryParseAnalysis = (t: string): Analysis | null => {
       try {
-        const obj = JSON.parse(t.trim());
+        const cleaned = t.replace(/```(?:json)?\n?/g, '').trim();
+        const obj = JSON.parse(cleaned);
         return obj && typeof obj.success === 'boolean' ? obj : null;
       } catch { return null; }
     };
@@ -490,7 +486,8 @@ export async function execRafNode(
     // ── RECURSIVE CASE ────────────────────────────────────────────────────────
     const tryParsePlan = (t: string): Plan[] | null => {
       try {
-        const arr = JSON.parse(t.trim());
+        const cleaned = t.replace(/```(?:json)?\n?/g, '').trim();
+        const arr = JSON.parse(cleaned);
         return Array.isArray(arr) && arr.length >= 2 ? arr : null;
       } catch { return null; }
     };
@@ -503,8 +500,9 @@ export async function execRafNode(
     );
 
     const fallbackPlan: Plan[] = [
-      { name: 'analyze-problem', context: String(ctx || '')?.slice(0, 600), dependsOn: [] },
-      { name: 'synthesize-answer', context: `Combine analysis results to answer: ${String(context || '')?.slice(0, 400)}`, dependsOn: ['analyze-problem'] },
+      { name: 'analyze-problem-part-1', context: `Analyze the first half of the problem constraints: ${String(ctx || '')?.slice(0, 600)}`, dependsOn: [] },
+      { name: 'analyze-problem-part-2', context: `Analyze the second half of the problem constraints or verify the assumptions: ${String(ctx || '')?.slice(0, 600)}`, dependsOn: [] },
+      { name: 'synthesize-answer', context: `Combine analysis results to answer: ${String(context || '')?.slice(0, 400)}`, dependsOn: ['analyze-problem-part-1', 'analyze-problem-part-2'] },
     ];
     const planOpts = plans.length > 0 ? plans : [fallbackPlan];
 
@@ -560,7 +558,8 @@ export async function execRafNode(
     type Analysis = { success: boolean; info: string };
     const tryParseAnalysis = (t: string): Analysis | null => {
       try {
-        const obj = JSON.parse(t.trim());
+        const cleaned = t.replace(/```(?:json)?\n?/g, '').trim();
+        const obj = JSON.parse(cleaned);
         return obj && typeof obj.success === 'boolean' ? obj : null;
       } catch { return null; }
     };
