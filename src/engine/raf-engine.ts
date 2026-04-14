@@ -455,7 +455,7 @@ export async function execRafNode(
       () => {
         let msg = `Original task:\n${String(ctx || '')?.slice(0, 600)}\n\nExecution result:\n${String(execR.text || '')?.slice(0, 600)}`;
         if (_expectedAnswer && depth === 0) {
-          msg += `\n\nCRITICAL - EXPECTED CORRECT ANSWER: ${_expectedAnswer}\nYou MUST verify if the Execution result ultimately derived this expected answer. If it did not, success MUST be false.`;
+          msg += `\n\n[CRITICAL EVALUATION DIRECTIVE]\nYou are evaluating the ROOT node. The known, mathematically verified correct answer is: ${_expectedAnswer}\nIf the execution result does not explicitly contain this exact value or logically lead to this exact value, you MUST return "success": false. DO NOT accept any other answer. DO NOT accept hallucinations.`;
         }
         return msg;
       },
@@ -582,7 +582,7 @@ export async function execRafNode(
       () => {
         let msg = `Original task:\n${String(ctx || '')?.slice(0, 400)}\n\nSub-task results:\n${allSummaries}`;
         if (_expectedAnswer && depth === 0) {
-          msg += `\n\nCRITICAL - EXPECTED CORRECT ANSWER: ${_expectedAnswer}\nYou MUST verify if the final Sub-task results ultimately derived this expected answer. If it did not, success MUST be false.`;
+          msg += `\n\n[CRITICAL EVALUATION DIRECTIVE]\nYou are evaluating the ROOT node. The known, mathematically verified correct answer is: ${_expectedAnswer}\nIf the sub-task results do not explicitly contain this exact value or logically lead to this exact value, you MUST return "success": false. DO NOT accept any other answer. DO NOT accept hallucinations.`;
         }
         return msg;
       },
