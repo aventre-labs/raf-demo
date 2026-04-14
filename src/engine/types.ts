@@ -91,7 +91,7 @@ export const DEFAULT_PHYSICS: PhysicsParams = {
   linkStrength: 0.8,
   chargeStrength: -1500,
   chargeDistanceMax: 1500,
-  outwardStrength: 80,
+  outwardStrength: 5,
   progressiveLinkBase: 150,
   progressiveLinkScale: 0.05,
   collideRadiusOffset: 40,
