@@ -100,6 +100,9 @@ export default function App() {
         const existing = nodesRef.current[existingIdx];
         existing.active = true;
         existing.success = undefined;
+        existing.error = false;
+        existing.isErrorOrigin = false;
+        existing.abandoned = false;
         existing.label = ev.label === 'root' ? 'Problem' : ev.label;
         existing.detail = `RafNode "${existing.label}" — depth ${ev.depth}`;
         setGraphNodes([...nodesRef.current]);
@@ -150,6 +153,40 @@ export default function App() {
       }
       setGraphNodes([...nodesRef.current]);
       setGraphLinks([...linksRef.current]);
+      return;
+    }
+
+    if (ev.type === 'raf_node_error') {
+      const idx = nodesRef.current.findIndex(n => n.id === mkId(ev.rafNodeId));
+      if (idx !== -1) {
+        nodesRef.current[idx].error = true;
+        nodesRef.current[idx].isErrorOrigin = ev.isOrigin;
+        setGraphNodes([...nodesRef.current]);
+      }
+      return;
+    }
+
+    if (ev.type === 'raf_node_abandoned') {
+      const parentId = mkId(ev.rafNodeId);
+      
+      const markAbandoned = (nId: string) => {
+        const cIdx = nodesRef.current.findIndex(n => n.id === nId);
+        if (cIdx !== -1 && !nodesRef.current[cIdx].abandoned) {
+          nodesRef.current[cIdx].abandoned = true;
+          // Recursively find children links
+          const childrenLinks = linksRef.current.filter(l => {
+            const src = typeof l.source === 'string' ? l.source : (l.source as GraphNode).id;
+            return src === nId;
+          });
+          childrenLinks.forEach(l => {
+            const tgt = typeof l.target === 'string' ? l.target : (l.target as GraphNode).id;
+            markAbandoned(tgt);
+          });
+        }
+      };
+      
+      markAbandoned(parentId);
+      setGraphNodes([...nodesRef.current]);
       return;
     }
 

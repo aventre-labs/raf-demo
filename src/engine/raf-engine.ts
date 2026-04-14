@@ -460,11 +460,14 @@ export async function execRafNode(
 
       if (isOrigin && newAdvice) {
         // Scrap and re-run with steering advice
+        emit({ type: 'raf_node_error', rafNodeId: rid, isOrigin: true });
+        emit({ type: 'raf_node_abandoned', rafNodeId: rid });
         emit({ type: 'raf_node_done', rafNodeId: rid, success: false, summary: `Retrying with correction (attempt ${retryCount + 2})` });
-        return execRafNode(context, params, depth, name, parentRafId, depSummaryIn, newAdvice, retryCount + 1, rid);
+        return execRafNode(context, params, depth, name, parentRafId, depSummaryIn, newAdvice, retryCount + 1);
       }
 
       // Not the origin — propagate failure up
+      emit({ type: 'raf_node_error', rafNodeId: rid, isOrigin: false });
       emit({ type: 'raf_node_done', rafNodeId: rid, success: false, summary: answer });
       return { name, success: false, summary: finalAna.info, answer, retries: retryCount, children: {} };
     }
@@ -567,10 +570,13 @@ export async function execRafNode(
       );
 
       if (isOrigin && newAdvice) {
+        emit({ type: 'raf_node_error', rafNodeId: rid, isOrigin: true });
+        emit({ type: 'raf_node_abandoned', rafNodeId: rid });
         emit({ type: 'raf_node_done', rafNodeId: rid, success: false, summary: `Retrying with correction (attempt ${retryCount + 2})` });
-        return execRafNode(context, params, depth, name, parentRafId, depSummaryIn, newAdvice, retryCount + 1, rid);
+        return execRafNode(context, params, depth, name, parentRafId, depSummaryIn, newAdvice, retryCount + 1);
       }
 
+      emit({ type: 'raf_node_error', rafNodeId: rid, isOrigin: false });
       emit({ type: 'raf_node_done', rafNodeId: rid, success: false, summary: finalAna.info });
       return { name, success: false, summary: finalAna.info, answer: childAnswers, retries: retryCount, children: childResults };
     }

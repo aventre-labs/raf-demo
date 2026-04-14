@@ -239,6 +239,12 @@ export function ExecutionGraph({ nodes, links, mode, physics, width, height, onN
         }
       });
 
+      const getEdgeColor = (d: GraphEdge) => {
+        const targetNode = typeof d.target === 'object' ? d.target as GraphNode : nodeById.get(d.target);
+        if (targetNode?.abandoned) return '#374151'; // Dark grey for abandoned edges
+        return d.edgeType === 'parallel' ? '#00cccc' : d.edgeType === 'dependency' ? '#e040fb' : '#444';
+      };
+
       // ── D3 DOM update (enter / update / exit) ────────────────────────────
       const eSel = g.select<SVGGElement>('.edges').selectAll<SVGLineElement, GraphEdge>('line')
         .data(vLinks, d => d.id);
@@ -246,16 +252,26 @@ export function ExecutionGraph({ nodes, links, mode, physics, width, height, onN
       eSel.enter().append('line').attr('opacity', 0).attr('stroke-linecap', 'round')
         .call(e => e.transition().duration(300).attr('opacity', 1))
         .merge(eSel)
-        .attr('stroke', d => d.edgeType === 'parallel' ? '#00cccc' : d.edgeType === 'dependency' ? '#e040fb' : '#444')
+        .attr('stroke', getEdgeColor)
         .attr('stroke-width',    d => d.edgeType === 'dependency' ? 1.5 : 2)
-        .attr('stroke-dasharray', d => d.edgeType === 'parallel' ? '8 4' : d.edgeType === 'dependency' ? '3 3' : 'none')
-        .attr('marker-end',      d => `url(#arr-${d.edgeType})`);
+        .attr('stroke-dasharray', d => {
+          const targetNode = typeof d.target === 'object' ? d.target as GraphNode : nodeById.get(d.target);
+          if (targetNode?.abandoned) return '4 4';
+          return d.edgeType === 'parallel' ? '8 4' : d.edgeType === 'dependency' ? '3 3' : 'none';
+        })
+        .attr('marker-end',      d => {
+          const targetNode = typeof d.target === 'object' ? d.target as GraphNode : nodeById.get(d.target);
+          if (targetNode?.abandoned) return null; // No marker for abandoned edges
+          return `url(#arr-${d.edgeType})`;
+        });
 
       const nSel = g.select<SVGGElement>('.nodes').selectAll<SVGGElement, GraphNode>('g.ngrp')
         .data(vNodes, d => d.id);
       nSel.exit().transition().duration(180).attr('opacity', 0).remove();
 
       const getNodeColor = (d: GraphNode) => {
+        if (d.error) return '#ef4444'; // Red for errors
+        if (d.abandoned) return '#4b5563'; // Grey for abandoned nodes
         if (d.type === 'raf-node') {
           if (d.caseType === 'base') return '#69ff47'; // Green
           if (d.caseType === 'recursive') return '#f59e0b'; // Orange/Amber
@@ -302,8 +318,9 @@ export function ExecutionGraph({ nodes, links, mode, physics, width, height, onN
       lSel.exit().remove();
       lSel.enter().append('text')
         .attr('text-anchor', 'middle').attr('font-size', 9)
-        .attr('fill', '#888').attr('pointer-events', 'none')
+        .attr('pointer-events', 'none')
         .merge(lSel)
+        .attr('fill', d => d.abandoned && !d.error ? '#4b5563' : '#888')
         .text(d => (d.label && d.label.length > 16) ? d.label.slice(0, 15) + '…' : (d.label || ''));
 
       // ── Simulation update ────────────────────────────────────────────────
