@@ -403,18 +403,37 @@ export async function execRafNode(
       SYS.designAgent, () => `Design a plan to solve:\n${String(ctx || '')?.slice(0, 1000)}`,
       tryParseDesign,
     );
-    const designOpts = designs.length > 0 ? designs : [{ approach: 'Direct step-by-step computation.', key_operations: [], tools_needed: [], expected_output: 'answer' }];
+
+    if (designs.length === 0) {
+      const finalAna = { success: false, info: "Failed to generate a valid JSON execution plan (JSON compliance failure)." };
+      const answer = "No valid JSON output.";
+      const { steeringAdvice: newAdvice, isOrigin } = await runErrorCorrection(
+        context, params, depth, name, rid, parentRafId,
+        finalAna.info, answer, depSummaryIn,
+      );
+
+      if (isOrigin && newAdvice) {
+        emit({ type: 'raf_node_error', rafNodeId: rid, isOrigin: true });
+        emit({ type: 'raf_node_abandoned', rafNodeId: rid });
+        emit({ type: 'raf_node_done', rafNodeId: rid, success: false, summary: `Retrying with correction (attempt ${retryCount + 2})` });
+        return execRafNode(context, params, depth, name, parentRafId, depSummaryIn, newAdvice, retryCount + 1);
+      }
+
+      emit({ type: 'raf_node_error', rafNodeId: rid, isOrigin: false });
+      emit({ type: 'raf_node_done', rafNodeId: rid, success: false, summary: answer });
+      return { name, success: false, summary: finalAna.info, answer, retries: retryCount, children: {} };
+    }
 
     const bestDesign = await jury<Design>(
       'Design Jury', rid, rid,
       params.baseCaseDesignJurySize, tk,
-      designOpts, SYS.designJury,
-      () => `Choose best plan:\n${designOpts.map((d, i) => `[${i}] ${JSON.stringify(d)}`).join('\n')}`,
+      designs, SYS.designJury,
+      () => `Choose best plan:\n${designs.map((d, i) => `[${i}] ${JSON.stringify(d)}`).join('\n')}`,
     );
 
     // Execute
     const eid = nid('agent');
-    const execPrompt = `Problem:\n${String(ctx || '')?.slice(0, 1200)}\n\nApproach: ${bestDesign.approach}\nTools to use: ${bestDesign.tools_needed?.join(', ') || 'none'}\n\nSolve step by step:`;
+    const execPrompt = `Problem:\n${String(ctx || '')?.slice(0, 1200)}\n\nApproach: ${bestDesign.approach}\nTools to use: ${Array.isArray(bestDesign.tools_needed) ? bestDesign.tools_needed.join(', ') : 'none'}\n\nSolve step by step:`;
     emit({ type: 'node_start', nodeId: eid, label: 'Execute', nodeType: 'agent', parentId: rid, rafNodeId: rid, edgeType: 'flow', prompt: execPrompt, systemPrompt: SYS.execute });
     const startEid = Date.now();
     const execR = await callLLM(
@@ -449,7 +468,8 @@ export async function execRafNode(
       },
       tryParseAnalysis,
     );
-    const anaOpts = analyses.length > 0 ? analyses : [{ success: true, info: `Answer: ${answer}` }];
+
+    const anaOpts = analyses.length > 0 ? analyses : [{ success: false, info: `Failed to generate a valid JSON analysis (JSON compliance failure). Answer was: ${answer}` }];
 
     const finalAna = await jury<Analysis>(
       'Analysis Jury', rid, rid,
@@ -499,18 +519,31 @@ export async function execRafNode(
       tryParsePlan,
     );
 
-    const fallbackPlan: Plan[] = [
-      { name: 'analyze-problem-part-1', context: `Analyze the first half of the problem constraints: ${String(ctx || '')?.slice(0, 600)}`, dependsOn: [] },
-      { name: 'analyze-problem-part-2', context: `Analyze the second half of the problem constraints or verify the assumptions: ${String(ctx || '')?.slice(0, 600)}`, dependsOn: [] },
-      { name: 'synthesize-answer', context: `Combine analysis results to answer: ${String(context || '')?.slice(0, 400)}`, dependsOn: ['analyze-problem-part-1', 'analyze-problem-part-2'] },
-    ];
-    const planOpts = plans.length > 0 ? plans : [fallbackPlan];
+    if (plans.length === 0) {
+      const finalAna = { success: false, info: "Failed to generate a valid JSON decomposition plan (JSON compliance failure)." };
+      const answer = "No valid JSON output.";
+      const { steeringAdvice: newAdvice, isOrigin } = await runErrorCorrection(
+        context, params, depth, name, rid, parentRafId,
+        finalAna.info, answer, depSummaryIn,
+      );
+
+      if (isOrigin && newAdvice) {
+        emit({ type: 'raf_node_error', rafNodeId: rid, isOrigin: true });
+        emit({ type: 'raf_node_abandoned', rafNodeId: rid });
+        emit({ type: 'raf_node_done', rafNodeId: rid, success: false, summary: `Retrying with correction (attempt ${retryCount + 2})` });
+        return execRafNode(context, params, depth, name, parentRafId, depSummaryIn, newAdvice, retryCount + 1);
+      }
+
+      emit({ type: 'raf_node_error', rafNodeId: rid, isOrigin: false });
+      emit({ type: 'raf_node_done', rafNodeId: rid, success: false, summary: answer });
+      return { name, success: false, summary: finalAna.info, answer, retries: retryCount, children: {} };
+    }
 
     const chosenPlan = await jury<Plan[]>(
       'Plan Jury', rid, rid,
       params.planJurySize, tk,
-      planOpts, SYS.planJury,
-      () => `Choose best decomposition:\n${planOpts.map((p, i) => `[${i}] ${JSON.stringify(p)?.slice(0, 400)}`).join('\n')}`,
+      plans, SYS.planJury,
+      () => `Choose best decomposition:\n${plans.map((p, i) => `[${i}] ${JSON.stringify(p)?.slice(0, 400)}`).join('\n')}`,
     );
 
     // Execute children respecting dependsOn order
@@ -579,7 +612,7 @@ export async function execRafNode(
       },
       tryParseAnalysis,
     );
-    const anaOpts = analyses.length > 0 ? analyses : [{ success: !allFailed, info: allSummaries }];
+    const anaOpts = analyses.length > 0 ? analyses : [{ success: false, info: `Failed to generate a valid JSON analysis (JSON compliance failure). Sub-task summaries: ${allSummaries}` }];
 
     const finalAna = await jury<Analysis>(
       'Analysis Jury', rid, rid,
