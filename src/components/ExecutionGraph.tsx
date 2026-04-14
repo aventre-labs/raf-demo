@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import * as d3 from 'd3';
-import type { GraphNode, GraphEdge, GraphMode } from '../engine/types';
+import type { GraphNode, GraphEdge, GraphMode, PhysicsParams } from '../engine/types';
 
 const NC: Record<string, string> = {
   'raf-node': '#00e5ff', jury: '#e040fb', consortium: '#ffeb3b',
@@ -14,6 +14,7 @@ interface Props {
   nodes: GraphNode[];
   links: GraphEdge[];
   mode: GraphMode;
+  physics: PhysicsParams;
   width: number;
   height: number;
   onNodeClick?: (node: GraphNode) => void;
@@ -78,7 +79,7 @@ function forceProgressiveLink(baseDistance: number, strengthScale: number) {
   return force;
 }
 
-export function ExecutionGraph({ nodes, links, mode, width, height, onNodeClick, onBackgroundClick }: Props) {
+export function ExecutionGraph({ nodes, links, mode, physics, width, height, onNodeClick, onBackgroundClick }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
   const simRef = useRef<d3.Simulation<GraphNode, GraphEdge> | null>(null);
   const zlRef  = useRef<d3.Selection<SVGGElement, unknown, null, undefined> | null>(null);
@@ -128,14 +129,14 @@ export function ExecutionGraph({ nodes, links, mode, width, height, onNodeClick,
     simRef.current = d3.forceSimulation<GraphNode>([])
       .force('link',    d3.forceLink<GraphNode, GraphEdge>([])
                           .id(d => d.id)
-                          .distance(100)
-                          .strength(0.8))
-      .force('charge',  d3.forceManyBody().strength(-1500).distanceMax(1500))
-      .force('outward', forceConstantOutward(width / 2, height / 2, 80))
-      .force('progressiveLink', forceProgressiveLink(150, 0.05))
-      .force('collide', d3.forceCollide<GraphNode>().radius(d => NR[d.type] + 40).strength(1))
-      .alphaDecay(0.015)
-      .velocityDecay(0.45);
+                          .distance(physics.linkDistance)
+                          .strength(physics.linkStrength))
+      .force('charge',  d3.forceManyBody().strength(physics.chargeStrength).distanceMax(physics.chargeDistanceMax))
+      .force('outward', forceConstantOutward(width / 2, height / 2, physics.outwardStrength))
+      .force('progressiveLink', forceProgressiveLink(physics.progressiveLinkBase, physics.progressiveLinkScale))
+      .force('collide', d3.forceCollide<GraphNode>().radius(d => NR[d.type] + physics.collideRadiusOffset).strength(physics.collideStrength))
+      .alphaDecay(physics.alphaDecay)
+      .velocityDecay(physics.velocityDecay);
 
     simRef.current.on('tick', () => {
       if (!zlRef.current) return;
@@ -152,6 +153,35 @@ export function ExecutionGraph({ nodes, links, mode, width, height, onNodeClick,
         .attr('y', d => (d.y ?? 0) + NR[d.type] + 12);
     });
   }, []); // eslint-disable-line
+
+  // ── Update physics dynamically ──────────────────────────────────────────────
+  useEffect(() => {
+    if (!simRef.current) return;
+    const sim = simRef.current;
+    
+    (sim.force('link') as d3.ForceLink<GraphNode, GraphEdge>)
+      .distance(physics.linkDistance)
+      .strength(physics.linkStrength);
+      
+    (sim.force('charge') as d3.ForceManyBody<GraphNode>)
+      .strength(physics.chargeStrength)
+      .distanceMax(physics.chargeDistanceMax);
+      
+    sim.force('outward', forceConstantOutward(width / 2, height / 2, physics.outwardStrength));
+    
+    const vLinks = (sim.force('link') as d3.ForceLink<GraphNode, GraphEdge>).links();
+    sim.force('progressiveLink', forceProgressiveLink(physics.progressiveLinkBase, physics.progressiveLinkScale));
+    const progForce = sim.force('progressiveLink') as any;
+    if (progForce) progForce.links(vLinks);
+    
+    (sim.force('collide') as d3.ForceCollide<GraphNode>)
+      .radius(d => NR[d.type] + physics.collideRadiusOffset)
+      .strength(physics.collideStrength);
+      
+    sim.alphaDecay(physics.alphaDecay).velocityDecay(physics.velocityDecay);
+    
+    sim.alpha(Math.max(sim.alpha(), 0.3)).restart();
+  }, [physics, width, height]);
 
   // ── Update graph data ───────────────────────────────────────────────────────
   useEffect(() => {

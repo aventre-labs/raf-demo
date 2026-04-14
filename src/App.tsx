@@ -8,11 +8,12 @@ import { ScrollArea } from './components/ui/scroll-area';
 import { Separator } from './components/ui/separator';
 import { ExecutionGraph } from './components/ExecutionGraph';
 import { ParamPanel } from './components/ParamPanel';
+import { PhysicsPanel } from './components/PhysicsPanel';
 import { PROBLEMS, CATEGORIES, BENCHMARKS_META } from './data/benchmarks';
 import { runRAF, type RafResult } from './engine/raf-engine';
 import { LLMCallLimitError, getCallCount } from './services/chatjimmy';
-import type { GraphNode, GraphEdge, GraphMode, ExecutionEvent, RAFParams } from './engine/types';
-import { DEFAULT_PARAMS, MAX_LLM_CALLS } from './engine/types';
+import type { GraphNode, GraphEdge, GraphMode, ExecutionEvent, RAFParams, PhysicsParams } from './engine/types';
+import { DEFAULT_PARAMS, MAX_LLM_CALLS, DEFAULT_PHYSICS } from './engine/types';
 
 interface Session {
   id: string;
@@ -38,6 +39,7 @@ export default function App() {
   const [activeId, setActiveId] = useState<string>('');
 
   const [params, setParams] = useState<RAFParams>({ ...DEFAULT_PARAMS });
+  const [physics, setPhysics] = useState<PhysicsParams>({ ...DEFAULT_PHYSICS });
   const [running, setRunning] = useState(false);
   const [graphMode, setGraphMode] = useState<GraphMode>('simplified');
 
@@ -636,11 +638,14 @@ export default function App() {
             nodes={graphNodes}
             links={graphLinks}
             mode={graphMode}
+            physics={physics}
             width={gSize.w}
             height={gSize.h}
             onNodeClick={setSelectedNode}
             onBackgroundClick={() => setSelectedNode(null)}
           />
+          
+          <PhysicsPanel physics={physics} onChange={setPhysics} />
           
           {/* Selected Node Inspector */}
           <AnimatePresence>

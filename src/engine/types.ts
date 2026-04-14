@@ -71,3 +71,31 @@ export const DEFAULT_PARAMS: RAFParams = {
 
 export const MAX_LLM_CALLS = 20000;
 export const MAX_RECURSION_DEPTH = 500;
+
+export interface PhysicsParams {
+  linkDistance: number;
+  linkStrength: number;
+  chargeStrength: number;
+  chargeDistanceMax: number;
+  outwardStrength: number;
+  progressiveLinkBase: number;
+  progressiveLinkScale: number;
+  collideRadiusOffset: number;
+  collideStrength: number;
+  alphaDecay: number;
+  velocityDecay: number;
+}
+
+export const DEFAULT_PHYSICS: PhysicsParams = {
+  linkDistance: 100,
+  linkStrength: 0.8,
+  chargeStrength: -1500,
+  chargeDistanceMax: 1500,
+  outwardStrength: 80,
+  progressiveLinkBase: 150,
+  progressiveLinkScale: 0.05,
+  collideRadiusOffset: 40,
+  collideStrength: 1,
+  alphaDecay: 0.015,
+  velocityDecay: 0.45,
+};
