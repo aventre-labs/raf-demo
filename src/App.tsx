@@ -24,6 +24,7 @@ interface Session {
   links: GraphEdge[];
   callCount: number;
   error?: string;
+  jsonStats?: { attempts: number; successes: number };
 }
 
 function uid() { return `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`; }
@@ -48,10 +49,12 @@ export default function App() {
 
   // Live call counter display (updates during run)
   const [liveCallCount, setLiveCallCount] = useState(0);
+  const [liveJsonStats, setLiveJsonStats] = useState({ attempts: 0, successes: 0 });
 
   // Accumulated graph for the active run
   const nodesRef = useRef<GraphNode[]>([]);
   const linksRef = useRef<GraphEdge[]>([]);
+  const jsonStatsRef = useRef({ attempts: 0, successes: 0 });
   const [graphNodes, setGraphNodes] = useState<GraphNode[]>([]);
   const [graphLinks, setGraphLinks] = useState<GraphEdge[]>([]);
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
@@ -77,6 +80,12 @@ export default function App() {
   const handleEvent = useCallback((ev: ExecutionEvent, sid: string) => {
     if (ev.type === 'call_count') {
       setLiveCallCount(ev.count);
+      return;
+    }
+
+    if (ev.type === 'json_stats') {
+      jsonStatsRef.current = { attempts: ev.attempts, successes: ev.successes };
+      setLiveJsonStats(jsonStatsRef.current);
       return;
     }
 
@@ -194,6 +203,8 @@ export default function App() {
     setGraphLinks([]);
     setSelectedNode(null);
     setLiveCallCount(0);
+    setLiveJsonStats({ attempts: 0, successes: 0 });
+    jsonStatsRef.current = { attempts: 0, successes: 0 };
     setActiveId(id);
 
     // Add session to list first so activeSession resolves immediately
@@ -256,9 +267,14 @@ export default function App() {
       // Use getCallCount() — liveCallCount is stale in async closure
       const finalCallCount = getCallCount();
 
+      // We use a mutable ref or something to get final json stats?
+      // Since liveJsonStats is state, it might be stale in this async closure.
+      // But we can just use the state updater pattern if needed, or assume liveJsonStats is mostly correct,
+      // or we can add getJsonStats() to raf-engine.ts.
+      
       setSessions(prev => {
         const next = prev.map(s => s.id === id
-          ? { ...s, result, nodes: finalNodes, links: finalLinks, callCount: finalCallCount }
+          ? { ...s, result, nodes: finalNodes, links: finalLinks, callCount: finalCallCount, jsonStats: { ...jsonStatsRef.current } }
           : s
         );
         return next;
@@ -270,7 +286,7 @@ export default function App() {
 
       setSessions(prev => {
         const next = prev.map(s => s.id === id
-          ? { ...s, error: errorMsg, nodes: [...nodesRef.current], links: [...linksRef.current], callCount: getCallCount() }
+          ? { ...s, error: errorMsg, nodes: [...nodesRef.current], links: [...linksRef.current], callCount: getCallCount(), jsonStats: { ...jsonStatsRef.current } }
           : s
         );
         return next;
@@ -447,7 +463,7 @@ export default function App() {
               </div>
               {/* Results */}
               <ScrollArea className="flex-1">
-                <ResultsPanel session={activeSession} running={running} liveCallCount={liveCallCount} nodes={graphNodes} />
+                <ResultsPanel session={activeSession} running={running} liveCallCount={liveCallCount} liveJsonStats={liveJsonStats} nodes={graphNodes} />
               </ScrollArea>
             </motion.div>
           ) : (
@@ -458,7 +474,7 @@ export default function App() {
             >
               {activeSession || running ? (
                 <ScrollArea className="flex-1">
-                  <ResultsPanel session={activeSession} running={running} liveCallCount={liveCallCount} nodes={graphNodes} />
+                  <ResultsPanel session={activeSession} running={running} liveCallCount={liveCallCount} liveJsonStats={liveJsonStats} nodes={graphNodes} />
                 </ScrollArea>
               ) : (
                 <>
@@ -637,11 +653,13 @@ function ResultsPanel({
   session,
   running,
   liveCallCount,
+  liveJsonStats,
   nodes,
 }: {
   session: Session | null;
   running: boolean;
   liveCallCount: number;
+  liveJsonStats: { attempts: number; successes: number };
   nodes: GraphNode[];
 }) {
   if (!session && !running) {
@@ -657,26 +675,32 @@ function ResultsPanel({
   const totalNodes = nodes.length;
   const errorsHandled = nodes.filter(n => n.success === false).length;
   
-  const StatsStrip = () => (
-    <div className="grid grid-cols-2 gap-2 text-xs mb-4">
-      <div className="p-2 bg-card rounded-md border border-border flex flex-col items-center justify-center text-center">
-        <span className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">Nodes Gen</span>
-        <span className="font-semibold text-foreground text-sm">{totalNodes}</span>
+  const StatsStrip = () => {
+    const sStats = session?.jsonStats ?? { attempts: 0, successes: 0 };
+    const stats = running ? liveJsonStats : sStats;
+    const rate = stats.attempts > 0 ? ((stats.successes / stats.attempts) * 100).toFixed(1) + '%' : '100%';
+
+    return (
+      <div className="grid grid-cols-2 gap-2 text-xs mb-4">
+        <div className="p-2 bg-card rounded-md border border-border flex flex-col items-center justify-center text-center">
+          <span className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">Nodes Gen</span>
+          <span className="font-semibold text-foreground text-sm">{totalNodes}</span>
+        </div>
+        <div className="p-2 bg-card rounded-md border border-border flex flex-col items-center justify-center text-center">
+          <span className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">JSON Compliance</span>
+          <span className="font-semibold text-foreground text-sm">{rate}</span>
+        </div>
+        <div className="p-2 bg-card rounded-md border border-border flex flex-col items-center justify-center text-center">
+          <span className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">LLM Calls</span>
+          <span className="font-semibold text-primary text-sm">{running ? liveCallCount : session?.callCount ?? 0}</span>
+        </div>
+        <div className="p-2 bg-card rounded-md border border-border flex flex-col items-center justify-center text-center">
+          <span className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">Errors Handled</span>
+          <span className="font-semibold text-red-400 text-sm">{errorsHandled}</span>
+        </div>
       </div>
-      <div className="p-2 bg-card rounded-md border border-border flex flex-col items-center justify-center text-center">
-        <span className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">Max Depth</span>
-        <span className="font-semibold text-foreground text-sm">{maxDepth}</span>
-      </div>
-      <div className="p-2 bg-card rounded-md border border-border flex flex-col items-center justify-center text-center">
-        <span className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">LLM Calls</span>
-        <span className="font-semibold text-primary text-sm">{running ? liveCallCount : session?.callCount ?? 0}</span>
-      </div>
-      <div className="p-2 bg-card rounded-md border border-border flex flex-col items-center justify-center text-center">
-        <span className="text-[10px] text-muted-foreground uppercase tracking-wider mb-0.5">Errors Handled</span>
-        <span className="font-semibold text-red-400 text-sm">{errorsHandled}</span>
-      </div>
-    </div>
-  );
+    );
+  };
 
   if (running && !session?.result) {
     return (

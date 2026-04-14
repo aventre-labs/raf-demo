@@ -32,7 +32,8 @@ export type ExecutionEvent =
   | { type: 'raf_node_start'; rafNodeId: string; parentRafNodeId?: string; label: string; depth: number }
   | { type: 'raf_node_type'; rafNodeId: string; caseType: 'base' | 'recursive' }
   | { type: 'raf_node_done'; rafNodeId: string; success: boolean; summary?: string }
-  | { type: 'call_count'; count: number };
+  | { type: 'call_count'; count: number }
+  | { type: 'json_stats'; attempts: number; successes: number };
 
 export interface RAFParams {
   baseCaseJurySize: number;

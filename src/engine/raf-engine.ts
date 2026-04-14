@@ -6,6 +6,8 @@ type EventCb = (e: ExecutionEvent) => void;
 
 let _cb: EventCb | null = null;
 let _nid = 0;
+let _jsonAttempts = 0;
+let _jsonSuccesses = 0;
 
 function nid(prefix: string) { return `${prefix}-${++_nid}`; }
 function emit(e: ExecutionEvent) { _cb?.(e); }
@@ -163,9 +165,27 @@ async function consortium<T>(
     const aid = nid('agent');
     emit({ type: 'node_start', nodeId: aid, label: `Agent ${i + 1}`, nodeType: 'agent', parentId: cid, rafNodeId, edgeType: 'parallel' });
     const msgs: ChatMessage[] = [{ role: 'user', content: makeUserMsg() }];
-    const r = await callLLM(msgs, sys, topK, MAX_LLM_CALLS);
-    const parsed = parse(r.text);
-    emit({ type: 'node_done', nodeId: aid, success: parsed !== null, summary: r.text.slice(0, 80) });
+    
+    let parsed: T | null = null;
+    let attempts = 0;
+    let lastText = '';
+    
+    while (parsed === null && attempts < 5) {
+      attempts++;
+      const r = await callLLM(msgs, sys, topK, MAX_LLM_CALLS);
+      lastText = r.text;
+      _jsonAttempts++;
+      parsed = parse(r.text);
+      if (parsed !== null) _jsonSuccesses++;
+      emit({ type: 'json_stats', attempts: _jsonAttempts, successes: _jsonSuccesses });
+      
+      if (parsed === null && attempts < 5) {
+        msgs.push({ role: 'assistant', content: lastText });
+        msgs.push({ role: 'user', content: 'Your response was not perfectly structured JSON. Please output ONLY valid JSON matching the requested schema.' });
+      }
+    }
+
+    emit({ type: 'node_done', nodeId: aid, success: parsed !== null, summary: lastText.slice(0, 80) });
     if (parsed !== null) results.push(parsed);
   }));
 
@@ -262,8 +282,8 @@ async function runErrorCorrection(
   const recoveryUserMsg = `FAILED PROBLEM: ${context.slice(0, 600)}\n\nPREVIOUS APPROACH RESULT: ${previousAnswer.slice(0, 400)}\n\nFAILURE REASON: ${failureSummary.slice(0, 300)}\n\nPropose a completely different approach.`;
 
   const tryParseRecovery = (t: string): Recovery | null => {
-    try { return JSON.parse(t.match(/\{[\s\S]+\}/)?.[0] ?? 'null'); }
-    catch { return { failure_analysis: 'Parse error', new_approach: t.slice(0, 300), key_differences: [], confidence: 'medium' }; }
+    try { return JSON.parse(t.trim()); }
+    catch { return null; }
   };
 
   const recoveries = await consortium<Recovery>(
@@ -357,10 +377,10 @@ export async function execRafNode(
 
     const tryParseDesign = (t: string): Design | null => {
       try {
-        const obj = JSON.parse(t.match(/\{[\s\S]+\}/)?.[0] ?? 'null');
+        const obj = JSON.parse(t.trim());
         return obj && obj.approach ? obj : null;
       } catch {
-        return { approach: t.slice(0, 300), key_operations: [], tools_needed: [], expected_output: 'answer' };
+        return null;
       }
     };
 
@@ -395,9 +415,9 @@ export async function execRafNode(
     type Analysis = { success: boolean; info: string };
     const tryParseAnalysis = (t: string): Analysis | null => {
       try {
-        const obj = JSON.parse(t.match(/\{[\s\S]+\}/)?.[0] ?? 'null');
+        const obj = JSON.parse(t.trim());
         return obj && typeof obj.success === 'boolean' ? obj : null;
-      } catch { return { success: true, info: t.slice(0, 200) }; }
+      } catch { return null; }
     };
 
     const analyses = await consortium<Analysis>(
@@ -441,7 +461,7 @@ export async function execRafNode(
     // ── RECURSIVE CASE ────────────────────────────────────────────────────────
     const tryParsePlan = (t: string): Plan[] | null => {
       try {
-        const arr = JSON.parse(t.match(/\[[\s\S]+\]/)?.[0] ?? 'null');
+        const arr = JSON.parse(t.trim());
         return Array.isArray(arr) && arr.length >= 2 ? arr : null;
       } catch { return null; }
     };
@@ -498,9 +518,9 @@ export async function execRafNode(
     type Analysis = { success: boolean; info: string };
     const tryParseAnalysis = (t: string): Analysis | null => {
       try {
-        const obj = JSON.parse(t.match(/\{[\s\S]+\}/)?.[0] ?? 'null');
+        const obj = JSON.parse(t.trim());
         return obj && typeof obj.success === 'boolean' ? obj : null;
-      } catch { return { success: true, info: t.slice(0, 200) }; }
+      } catch { return null; }
     };
 
     const allFailed = Object.values(childResults).some(r => !r.success);
@@ -549,12 +569,16 @@ export async function execRafNode(
 // PUBLIC ENTRY
 // ─────────────────────────────────────────────────────────────────────────────
 
+export function getJsonStats() { return { attempts: _jsonAttempts, successes: _jsonSuccesses }; }
+
 export function runRAF(
   problem: string,
   params: RAFParams,
   onEvent: EventCb,
 ): Promise<RafResult> {
   _nid = 0;
+  _jsonAttempts = 0;
+  _jsonSuccesses = 0;
   _cb = onEvent;
   resetCallCount();
   setCallCountCallback(n => onEvent({ type: 'call_count', count: n }));
