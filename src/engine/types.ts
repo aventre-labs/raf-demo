@@ -65,5 +65,5 @@ export const DEFAULT_PARAMS: RAFParams = {
   extraContextLayer: false,
 };
 
-export const MAX_LLM_CALLS = 10000;
+export const MAX_LLM_CALLS = 20000;
 export const MAX_RECURSION_DEPTH = 500;
