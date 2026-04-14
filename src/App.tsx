@@ -202,7 +202,57 @@ export default function App() {
     setRunning(true);
 
     try {
-      const result = await runRAF(problem, params, ev => handleEvent(ev, id));
+      const res = await fetch('/api/raf', {
+        method: 'POST',
+        headers: {
+          'x-raf-consortium-size': params.consortiumSize.toString(),
+          'x-raf-jury-size': params.jurySize.toString(),
+          'x-raf-base-case-jury-size': params.baseCaseJurySize.toString(),
+          'x-raf-error-finder-jury-size': params.errorFinderJurySize.toString(),
+          'x-raf-max-depth': params.maxDepth.toString(),
+          'x-raf-max-llm-calls': params.maxLlmCalls.toString(),
+          'x-raf-top-k': params.topK.toString(),
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ problem })
+      });
+
+      if (!res.ok) {
+        const errorText = await res.text().catch(() => '');
+        throw new Error(`API Error ${res.status}: ${errorText}`);
+      }
+
+      const reader = res.body?.getReader();
+      if (!reader) throw new Error('No response body');
+      
+      const decoder = new TextDecoder();
+      let result: RafResult | null = null;
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n\n');
+        buffer = lines.pop() || '';
+        
+        for (const line of lines) {
+          if (line.trim().startsWith('data: ')) {
+            const data = JSON.parse(line.trim().slice(6));
+            if (data.type === 'DONE') {
+              result = data.result;
+            } else if (data.type === 'ERROR') {
+              throw new Error(data.error);
+            } else {
+              handleEvent(data as ExecutionEvent, id);
+            }
+          }
+        }
+      }
+      
+      if (!result) throw new Error('No result returned from API');
+
       const finalNodes = [...nodesRef.current];
       const finalLinks = [...linksRef.current];
       // Use getCallCount() — liveCallCount is stale in async closure
