@@ -74,8 +74,8 @@ export function ExecutionGraph({ nodes, links, mode, physics, width, height, onN
                           .distance(physics.linkDistance)
                           .strength(physics.linkStrength))
       .force('charge',  d3.forceManyBody().strength(physics.chargeStrength).distanceMax(physics.chargeDistanceMax))
-      .force('outward', forceConstantOutward(width / 2, height / 2, physics.outwardStrength))
-      .force('progressiveLink', forceProgressiveLink(physics.progressiveLinkBase, physics.progressiveLinkScale))
+      .force('x',       d3.forceX(width / 2).strength(physics.forceXStrength))
+      .force('y',       d3.forceY<GraphNode>(d => 80 + (d.depth ?? 0) * physics.levelSpacing).strength(physics.forceYStrength))
       .force('collide', d3.forceCollide<GraphNode>().radius(d => NR[d.type] + physics.collideRadiusOffset).strength(physics.collideStrength))
       .alphaDecay(physics.alphaDecay)
       .velocityDecay(physics.velocityDecay);
@@ -109,12 +109,13 @@ export function ExecutionGraph({ nodes, links, mode, physics, width, height, onN
       .strength(physics.chargeStrength)
       .distanceMax(physics.chargeDistanceMax);
       
-    sim.force('outward', forceConstantOutward(width / 2, height / 2, physics.outwardStrength));
-    
-    const vLinks = (sim.force('link') as d3.ForceLink<GraphNode, GraphEdge>).links();
-    sim.force('progressiveLink', forceProgressiveLink(physics.progressiveLinkBase, physics.progressiveLinkScale));
-    const progForce = sim.force('progressiveLink') as any;
-    if (progForce) progForce.links(vLinks);
+    (sim.force('x') as d3.ForceX<GraphNode>)
+      .x(width / 2)
+      .strength(physics.forceXStrength);
+      
+    (sim.force('y') as d3.ForceY<GraphNode>)
+      .y(d => 80 + (d.depth ?? 0) * physics.levelSpacing)
+      .strength(physics.forceYStrength);
     
     (sim.force('collide') as d3.ForceCollide<GraphNode>)
       .radius(d => NR[d.type] + physics.collideRadiusOffset)
@@ -137,12 +138,12 @@ export function ExecutionGraph({ nodes, links, mode, physics, width, height, onN
       const isAddition = nodes.length > prevCountRef.current;
       prevCountRef.current = nodes.length;
 
-      // ── Pin root node to graph center ────────
-      // Root node (depth=0) is held at the center so the graph grows radially.
+      // ── Pin root node to graph center horizontally, top vertically ────────
+      // Root node (depth=0) is held at (cx, 100) so the tree grows downwards.
       // We don't pin after the run completes (when active=false) so the user
       // can drag it freely once the layout has settled.
       const cx = width  / 2;
-      const cy = height / 2;
+      const cy = 100;
       nodes.forEach(n => {
         if (n.depth === 0) {
           n.fx = n.active ? cx : null;
@@ -240,14 +241,12 @@ export function ExecutionGraph({ nodes, links, mode, physics, width, height, onN
         .attr('text-anchor', 'middle').attr('font-size', 9)
         .attr('fill', '#888').attr('pointer-events', 'none')
         .merge(lSel)
-        .text(d => (d.label && d.label.length > 16) ? d.label?.slice(0, 15) + '…' : (d.label || ''));
+        .text(d => (d.label && d.label.length > 16) ? d.label.slice(0, 15) + '…' : (d.label || ''));
 
       // ── Simulation update ────────────────────────────────────────────────
       // CRITICAL ORDER: nodes first so D3 builds nodeById before links resolve.
       sim.nodes(vNodes);
       (sim.force('link') as d3.ForceLink<GraphNode, GraphEdge>).links(vLinks);
-      const progForce = sim.force('progressiveLink') as any;
-      if (progForce) progForce.links(vLinks);
 
       // Use moderate alpha for mode changes, low for pure status updates.
       // Prevent alpha explosion: only boost alpha if it's currently lower than target.
