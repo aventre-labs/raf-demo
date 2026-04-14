@@ -27,8 +27,8 @@ interface Session {
   jsonStats?: { attempts: number; successes: number };
 }
 
-function uid() { return `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`; }
-function short(s: string, n = 34) { const str = String(s || ''); return str.length > n ? str.slice(0, n) + '…' : str; }
+function uid() { return `${Date.now()}-${Math.random().toString(36)?.slice(2, 7)}`; }
+function short(s: string, n = 34) { const str = String(s || ''); return str.length > n ? str?.slice(0, n) + '…' : str; }
 function hhmm(ts: number) { return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
 
 const LS_KEY = 'raf-demo-sessions-v3';
@@ -253,7 +253,7 @@ export default function App() {
         
         for (const line of lines) {
           if (line.trim().startsWith('data: ')) {
-            const data = JSON.parse(line.trim().slice(6));
+            const data = JSON.parse(line.trim()?.slice(6));
             if (data.type === 'DONE') {
               result = data.result;
             } else if (data.type === 'ERROR') {
@@ -535,7 +535,7 @@ export default function App() {
                               </span>
                             )}
                             <span className="ml-auto text-[10px] text-muted-foreground truncate">
-                              → {String(p.expected || '').slice(0, 30)}
+                              → {String(p.expected || '')?.slice(0, 30)}
                             </span>
                           </div>
                           <p className="text-muted-foreground line-clamp-3 leading-relaxed">{p.q}</p>
@@ -786,7 +786,7 @@ function ResultsPanel({
       {/* Problem */}
       <div className="rounded-md border border-border bg-card/50 p-3">
         <div className="text-[10px] text-muted-foreground mb-1 uppercase tracking-wider">Problem</div>
-        <p className="text-xs text-foreground leading-relaxed">{String(session.problem || '').slice(0, 300)}</p>
+        <p className="text-xs text-foreground leading-relaxed">{String(session.problem || '')?.slice(0, 300)}</p>
       </div>
 
       {/* Result */}
@@ -808,12 +808,12 @@ function ResultsPanel({
         </div>
         {r.answer !== undefined && (
           <div className="font-mono text-base font-bold text-foreground leading-tight break-all">
-            {String(r.answer).slice(0, 500)}
+            {String(r.answer)?.slice(0, 500)}
           </div>
         )}
         {r.summary && (
           <p className="text-xs text-muted-foreground mt-2 leading-relaxed">
-            {String(r.summary).slice(0, 400)}
+            {String(r.summary)?.slice(0, 400)}
           </p>
         )}
       </div>
@@ -830,9 +830,9 @@ function ResultsPanel({
               <div className="min-w-0">
                 <span className="font-medium text-foreground">{n}</span>
                 {child.answer !== undefined && (
-                  <span className="text-primary ml-1.5 font-mono">→ {String(child.answer).slice(0, 80)}</span>
+                  <span className="text-primary ml-1.5 font-mono">→ {String(child.answer)?.slice(0, 80)}</span>
                 )}
-                <p className="text-muted-foreground leading-relaxed">{child.summary ? String(child.summary).slice(0, 120) : ''}</p>
+                <p className="text-muted-foreground leading-relaxed">{child.summary ? String(child.summary)?.slice(0, 120) : ''}</p>
               </div>
             </div>
           ))}

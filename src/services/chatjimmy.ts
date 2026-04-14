@@ -99,12 +99,12 @@ export async function callLLM(
       const ttft = performance.now() - t0;
 
       const statsIdx = raw.indexOf('<|stats|>');
-      const text = statsIdx > -1 ? raw.slice(0, statsIdx).trim() : raw.trim();
+      const text = statsIdx > -1 ? raw?.slice(0, statsIdx).trim() : raw.trim();
 
       let tokensPerSec: number | undefined;
       if (statsIdx > -1) {
         try {
-          const statsStr = raw.slice(statsIdx + 9, raw.indexOf('<|/stats|>'));
+          const statsStr = raw?.slice(statsIdx + 9, raw.indexOf('<|/stats|>'));
           const stats = JSON.parse(statsStr);
           tokensPerSec = stats.decode_rate ?? undefined;
         } catch { /* ignore */ }

@@ -5,6 +5,7 @@ import path from 'path'
 export default defineConfig({
   plugins: [react()],
   base: '/raf-demo/',
+  build: { sourcemap: true },
   resolve: {
     alias: { "@": path.resolve(__dirname, "./src") },
   },

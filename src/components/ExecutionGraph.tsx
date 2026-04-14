@@ -210,7 +210,7 @@ export function ExecutionGraph({ nodes, links, mode, width, height, onNodeClick,
         .attr('text-anchor', 'middle').attr('font-size', 9)
         .attr('fill', '#888').attr('pointer-events', 'none')
         .merge(lSel)
-        .text(d => (d.label && d.label.length > 16) ? d.label.slice(0, 15) + '…' : (d.label || ''));
+        .text(d => (d.label && d.label.length > 16) ? d.label?.slice(0, 15) + '…' : (d.label || ''));
 
       // ── Simulation update ────────────────────────────────────────────────
       // CRITICAL ORDER: nodes first so D3 builds nodeById before links resolve.

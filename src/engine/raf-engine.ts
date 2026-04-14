@@ -188,7 +188,7 @@ async function consortium<T>(
       }
     }
 
-    emit({ type: 'node_done', nodeId: aid, success: parsed !== null, summary: lastText.slice(0, 80), rawResponse: lastText, durationMs: Date.now() - startAid });
+    emit({ type: 'node_done', nodeId: aid, success: parsed !== null, summary: lastText?.slice(0, 80), rawResponse: lastText, durationMs: Date.now() - startAid });
     if (parsed !== null) results.push(parsed);
   }));
 
@@ -260,7 +260,7 @@ async function runErrorCorrection(
 
   // Step 1: Error finder jury
   const efid = nid('jury');
-  const efUserMsg = `Node name: ${name}\nDepth: ${depth}\nProblem: ${context.slice(0, 400)}\nExecution result: ${previousAnswer.slice(0, 300)}\nFailure analysis: ${failureSummary.slice(0, 300)}\n\n${isRoot ? 'This is the ROOT node — answer YES.' : 'Is this node responsible for the failure?'}`;
+  const efUserMsg = `Node name: ${name}\nDepth: ${depth}\nProblem: ${context?.slice(0, 400)}\nExecution result: ${previousAnswer?.slice(0, 300)}\nFailure analysis: ${failureSummary?.slice(0, 300)}\n\n${isRoot ? 'This is the ROOT node — answer YES.' : 'Is this node responsible for the failure?'}`;
   emit({ type: 'node_start', nodeId: efid, label: `Error Finder Jury (n=${params.errorFinderJurySize})`, nodeType: 'jury', parentId: rafNodeId, rafNodeId, edgeType: 'flow', prompt: efUserMsg, systemPrompt: SYS.errorFinderJury });
   const startEfid = Date.now();
 
@@ -287,7 +287,7 @@ async function runErrorCorrection(
 
   // Step 2: Recovery Consortium — generate alternative approaches
   type Recovery = { failure_analysis: string; new_approach: string; key_differences: string[]; confidence: string };
-  const recoveryUserMsg = `FAILED PROBLEM: ${context.slice(0, 600)}\n\nPREVIOUS APPROACH RESULT: ${previousAnswer.slice(0, 400)}\n\nFAILURE REASON: ${failureSummary.slice(0, 300)}\n\nPropose a completely different approach.`;
+  const recoveryUserMsg = `FAILED PROBLEM: ${context?.slice(0, 600)}\n\nPREVIOUS APPROACH RESULT: ${previousAnswer?.slice(0, 400)}\n\nFAILURE REASON: ${failureSummary?.slice(0, 300)}\n\nPropose a completely different approach.`;
 
   const tryParseRecovery = (t: string): Recovery | null => {
     try { return JSON.parse(t.trim()); }
@@ -358,7 +358,7 @@ export async function execRafNode(
 
   // ── Base Case Vote ────────────────────────────────────────────────────────
   const voteJuryId = nid('jury');
-  const votePrompt = `Depth: ${depth}/${MAX_RECURSION_DEPTH}\n\nTask to classify:\n${ctx.slice(0, 800)}`;
+  const votePrompt = `Depth: ${depth}/${MAX_RECURSION_DEPTH}\n\nTask to classify:\n${ctx?.slice(0, 800)}`;
   emit({ type: 'node_start', nodeId: voteJuryId, label: `Base Case Jury (n=${params.baseCaseJurySize})`, nodeType: 'jury', parentId: rid, rafNodeId: rid, edgeType: 'flow', prompt: votePrompt, systemPrompt: SYS.baseCaseVote });
 
   const voteTallies: Record<string, number> = {};
@@ -398,7 +398,7 @@ export async function execRafNode(
     const designs = await consortium<Design>(
       'Design Consortium', rid, rid,
       params.baseCaseConsortiumSize, tk,
-      SYS.designAgent, () => `Design a plan to solve:\n${ctx.slice(0, 1000)}`,
+      SYS.designAgent, () => `Design a plan to solve:\n${ctx?.slice(0, 1000)}`,
       tryParseDesign,
     );
     const designOpts = designs.length > 0 ? designs : [{ approach: 'Direct step-by-step computation.', key_operations: [], tools_needed: [], expected_output: 'answer' }];
@@ -412,17 +412,17 @@ export async function execRafNode(
 
     // Execute
     const eid = nid('agent');
-    const execPrompt = `Problem:\n${ctx.slice(0, 1200)}\n\nApproach: ${bestDesign.approach}\nTools to use: ${bestDesign.tools_needed?.join(', ') || 'none'}\n\nSolve step by step:`;
+    const execPrompt = `Problem:\n${ctx?.slice(0, 1200)}\n\nApproach: ${bestDesign.approach}\nTools to use: ${bestDesign.tools_needed?.join(', ') || 'none'}\n\nSolve step by step:`;
     emit({ type: 'node_start', nodeId: eid, label: 'Execute', nodeType: 'agent', parentId: rid, rafNodeId: rid, edgeType: 'flow', prompt: execPrompt, systemPrompt: SYS.execute });
     const startEid = Date.now();
     const execR = await callLLM(
       [{ role: 'user', content: execPrompt }],
       SYS.execute, params.maxTopK, MAX_LLM_CALLS,
     );
-    emit({ type: 'node_done', nodeId: eid, success: true, summary: execR.text.slice(0, 100), rawResponse: execR.text, durationMs: Date.now() - startEid });
+    emit({ type: 'node_done', nodeId: eid, success: true, summary: execR.text?.slice(0, 100), rawResponse: execR.text, durationMs: Date.now() - startEid });
 
     const answerMatch = execR.text.match(/####\s*(.+)$/m);
-    const answer = answerMatch?.[1]?.trim() ?? execR.text.slice(-200).trim();
+    const answer = answerMatch?.[1]?.trim() ?? execR.text?.slice(-200).trim();
 
     // Analysis
     type Analysis = { success: boolean; info: string };
@@ -437,7 +437,7 @@ export async function execRafNode(
       'Analysis Consortium', rid, rid,
       params.analysisConsortiumSize, tk,
       SYS.analysisAgent,
-      () => `Original task:\n${ctx.slice(0, 600)}\n\nExecution result:\n${execR.text.slice(0, 600)}`,
+      () => `Original task:\n${ctx?.slice(0, 600)}\n\nExecution result:\n${execR.text?.slice(0, 600)}`,
       tryParseAnalysis,
     );
     const anaOpts = analyses.length > 0 ? analyses : [{ success: true, info: `Answer: ${answer}` }];
@@ -482,13 +482,13 @@ export async function execRafNode(
     const plans = await consortium<Plan[]>(
       'Plan Consortium', rid, rid,
       params.planConsortiumSize, tk,
-      SYS.planAgent, () => `Decompose into 2-4 sub-tasks:\n${ctx.slice(0, 1000)}`,
+      SYS.planAgent, () => `Decompose into 2-4 sub-tasks:\n${ctx?.slice(0, 1000)}`,
       tryParsePlan,
     );
 
     const fallbackPlan: Plan[] = [
-      { name: 'analyze-problem', context: ctx.slice(0, 600), dependsOn: [] },
-      { name: 'synthesize-answer', context: `Combine analysis results to answer: ${context.slice(0, 400)}`, dependsOn: ['analyze-problem'] },
+      { name: 'analyze-problem', context: ctx?.slice(0, 600), dependsOn: [] },
+      { name: 'synthesize-answer', context: `Combine analysis results to answer: ${context?.slice(0, 400)}`, dependsOn: ['analyze-problem'] },
     ];
     const planOpts = plans.length > 0 ? plans : [fallbackPlan];
 
@@ -496,7 +496,7 @@ export async function execRafNode(
       'Plan Jury', rid, rid,
       params.planJurySize, tk,
       planOpts, SYS.planJury,
-      () => `Choose best decomposition:\n${planOpts.map((p, i) => `[${i}] ${JSON.stringify(p).slice(0, 400)}`).join('\n')}`,
+      () => `Choose best decomposition:\n${planOpts.map((p, i) => `[${i}] ${JSON.stringify(p)?.slice(0, 400)}`).join('\n')}`,
     );
 
     // Execute children respecting dependsOn order
@@ -542,7 +542,7 @@ export async function execRafNode(
       'Analysis Consortium', rid, rid,
       params.analysisConsortiumSize, tk,
       SYS.analysisAgent,
-      () => `Original task:\n${ctx.slice(0, 400)}\n\nSub-task results:\n${allSummaries}`,
+      () => `Original task:\n${ctx?.slice(0, 400)}\n\nSub-task results:\n${allSummaries}`,
       tryParseAnalysis,
     );
     const anaOpts = analyses.length > 0 ? analyses : [{ success: !allFailed, info: allSummaries }];

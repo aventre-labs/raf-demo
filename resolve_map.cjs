@@ -11,16 +11,14 @@ async function run() {
   
   const jsContent = fs.readFileSync(jsFile, 'utf8');
   
-  let regex = /([a-zA-Z0-9_])\.slice/g;
+  let regex = /\.slice/g;
   let match;
   while ((match = regex.exec(jsContent)) !== null) {
-    if (match[1] === 'u') {
-      const pos = consumer.originalPositionFor({
-        line: 1, // minified is usually 1 line
-        column: match.index
-      });
-      console.log(`u.slice at JS col ${match.index} maps to ${pos.source}:${pos.line}:${pos.column} (name: ${pos.name})`);
-    }
+    const pos = consumer.originalPositionFor({
+      line: 1, // minified is usually 1 line
+      column: match.index
+    });
+    console.log(`.slice at col ${match.index} maps to ${pos.source}:${pos.line} (name: ${pos.name})`);
   }
 }
 run();
