@@ -124,6 +124,23 @@ export function ExecutionGraph({ nodes, links, mode, width, height }: Props) {
         return vIds.has(s) && vIds.has(t);
       });
 
+      // Repair stale object references from localStorage or session switching.
+      // If a link already has an object reference, but it's not the exact object
+      // in vNodes (e.g. from a past session), we must point it to the current node.
+      const nodeById = new Map(vNodes.map(n => [n.id, n]));
+      vLinks.forEach(l => {
+        if (typeof l.source === 'object') {
+          const id = (l.source as GraphNode).id;
+          const curr = nodeById.get(id);
+          if (curr && curr !== l.source) l.source = curr;
+        }
+        if (typeof l.target === 'object') {
+          const id = (l.target as GraphNode).id;
+          const curr = nodeById.get(id);
+          if (curr && curr !== l.target) l.target = curr;
+        }
+      });
+
       // ── D3 DOM update (enter / update / exit) ────────────────────────────
       const eSel = g.select<SVGGElement>('.edges').selectAll<SVGLineElement, GraphEdge>('line')
         .data(vLinks, d => d.id);
@@ -184,10 +201,10 @@ export function ExecutionGraph({ nodes, links, mode, width, height }: Props) {
       sim.nodes(vNodes);
       (sim.force('link') as d3.ForceLink<GraphNode, GraphEdge>).links(vLinks);
 
-      // Use higher alpha for node additions (need energy to spread new nodes),
-      // moderate alpha for mode changes, low for pure status updates.
-      const alpha = modeChanged ? 0.7 : isAddition ? 1.0 : 0.2;
-      sim.alpha(alpha).restart();
+      // Use moderate alpha for mode changes, low for pure status updates.
+      // Prevent alpha explosion: only boost alpha if it's currently lower than target.
+      const targetAlpha = modeChanged ? 0.7 : isAddition ? 0.3 : 0.1;
+      sim.alpha(Math.max(sim.alpha(), targetAlpha)).restart();
 
     } catch (err) {
       console.error('[ExecutionGraph] D3 update error (suppressed):', err);
