@@ -14,13 +14,8 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     const params: RAFParams = { ...DEFAULT_PARAMS };
     
     // Override params from headers
-    if (headers.has('x-raf-consortium-size')) params.consortiumSize = parseInt(headers.get('x-raf-consortium-size')!);
-    if (headers.has('x-raf-jury-size')) params.jurySize = parseInt(headers.get('x-raf-jury-size')!);
     if (headers.has('x-raf-base-case-jury-size')) params.baseCaseJurySize = parseInt(headers.get('x-raf-base-case-jury-size')!);
     if (headers.has('x-raf-error-finder-jury-size')) params.errorFinderJurySize = parseInt(headers.get('x-raf-error-finder-jury-size')!);
-    if (headers.has('x-raf-max-depth')) params.maxDepth = parseInt(headers.get('x-raf-max-depth')!);
-    if (headers.has('x-raf-max-llm-calls')) params.maxLlmCalls = parseInt(headers.get('x-raf-max-llm-calls')!);
-    if (headers.has('x-raf-top-k')) params.topK = parseInt(headers.get('x-raf-top-k')!);
 
     let problem = '';
     if (init?.body && typeof init.body === 'string') {

@@ -197,13 +197,8 @@ export default function App() {
       const res = await fetch('/api/raf', {
         method: 'POST',
         headers: {
-          'x-raf-consortium-size': params.consortiumSize.toString(),
-          'x-raf-jury-size': params.jurySize.toString(),
           'x-raf-base-case-jury-size': params.baseCaseJurySize.toString(),
           'x-raf-error-finder-jury-size': params.errorFinderJurySize.toString(),
-          'x-raf-max-depth': params.maxDepth.toString(),
-          'x-raf-max-llm-calls': params.maxLlmCalls.toString(),
-          'x-raf-top-k': params.topK.toString(),
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({ problem })
