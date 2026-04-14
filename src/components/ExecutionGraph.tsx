@@ -70,12 +70,12 @@ export function ExecutionGraph({ nodes, links, mode, width, height, onNodeClick,
     simRef.current = d3.forceSimulation<GraphNode>([])
       .force('link',    d3.forceLink<GraphNode, GraphEdge>([])
                           .id(d => d.id)
-                          .distance(100)
-                          .strength(0.8))
-      .force('charge',  d3.forceManyBody().strength(-1500).distanceMax(1500))
-      // Add a gentle repulsive force strictly pushing nodes away from the center
-      .force('radial', d3.forceRadial<GraphNode>(width, width / 2, height / 2).strength(0.05))
-      .force('collide', d3.forceCollide<GraphNode>().radius(d => NR[d.type] + 40).strength(1))
+                          .distance(80)
+                          .strength(0.7))
+      .force('charge',  d3.forceManyBody().strength(-800).distanceMax(1000))
+      .force('x',       d3.forceX(width / 2).strength(0.01))
+      .force('y',       d3.forceY<GraphNode>(d => 80 + (d.depth ?? 0) * 120).strength(0.8))
+      .force('collide', d3.forceCollide<GraphNode>().radius(d => NR[d.type] + 30).strength(1))
       .alphaDecay(0.015)
       .velocityDecay(0.45);
 
@@ -107,12 +107,12 @@ export function ExecutionGraph({ nodes, links, mode, width, height, onNodeClick,
       const isAddition = nodes.length > prevCountRef.current;
       prevCountRef.current = nodes.length;
 
-      // ── Pin root node to graph center ────────
-      // Root node (depth=0) is held at the center so the graph grows radially.
+      // ── Pin root node to graph center horizontally, top vertically ────────
+      // Root node (depth=0) is held at (cx, 100) so the tree grows downwards.
       // We don't pin after the run completes (when active=false) so the user
       // can drag it freely once the layout has settled.
       const cx = width  / 2;
-      const cy = height / 2;
+      const cy = 100;
       nodes.forEach(n => {
         if (n.depth === 0) {
           n.fx = n.active ? cx : null;
