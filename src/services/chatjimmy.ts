@@ -9,10 +9,12 @@ const API_URL = 'https://chatjimmy.ai/api/chat';
 // corsproxy.io is primary; cors.eu.org is a cors-anywhere clone that handles
 // all HTTP methods including POST with arbitrary bodies.
 const PROXIES: Array<(u: string) => string> = [
+  // Dedicated Google Cloud Function proxy (bypasses CORS & rotates container IPs to avoid 429s)
+  _ => `https://raf-proxy-d2dhacfrta-uc.a.run.app`,
+  
+  // Public fallbacks (heavily rate-limited by ChatJimmy)
   u => `https://cors.eu.org/${u}`,
   u => `https://corsproxy.io/?${encodeURIComponent(u)}`,
-  u => `https://cors-proxy.fringe.zone/${u}`,
-  u => `https://thingproxy.freeboard.io/fetch/${u}`,
 ];
 
 let _proxyIdx = 0;           // rotates on 429
