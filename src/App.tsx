@@ -270,7 +270,7 @@ export default function App() {
     }
   }, []);
 
-  const launchRun = useCallback(async (problem: string) => {
+  const launchRun = useCallback(async (problem: string, expected?: string) => {
     if (!problem.trim() || running) return;
 
     const id = uid();
@@ -306,7 +306,7 @@ export default function App() {
           'x-raf-error-finder-jury-size': params.errorFinderJurySize.toString(),
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ problem })
+        body: JSON.stringify({ problem, expected })
       });
 
       if (!res.ok) {
@@ -597,7 +597,7 @@ export default function App() {
                         <button
                           key={p.id}
                           disabled={running}
-                          onClick={() => launchRun(p.q)}
+                          onClick={() => launchRun(p.q, p.expected)}
                           className="w-full text-left px-3 py-2.5 rounded-md border border-border hover:border-primary/50 hover:bg-accent/30 active:bg-accent/50 transition-colors text-xs disabled:opacity-40 disabled:cursor-not-allowed"
                         >
                           <div className="flex items-center gap-2 mb-1">

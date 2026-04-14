@@ -8,6 +8,7 @@ let _cb: EventCb | null = null;
 let _nid = 0;
 let _jsonAttempts = 0;
 let _jsonSuccesses = 0;
+let _expectedAnswer: string | undefined;
 
 function nid(prefix: string) { return `${prefix}-${++_nid}`; }
 function emit(e: ExecutionEvent) { _cb?.(e); }
@@ -449,7 +450,13 @@ export async function execRafNode(
       'Analysis Consortium', rid, rid,
       params.analysisConsortiumSize, tk,
       SYS.analysisAgent,
-      () => `Original task:\n${String(ctx || '')?.slice(0, 600)}\n\nExecution result:\n${String(execR.text || '')?.slice(0, 600)}`,
+      () => {
+        let msg = `Original task:\n${String(ctx || '')?.slice(0, 600)}\n\nExecution result:\n${String(execR.text || '')?.slice(0, 600)}`;
+        if (_expectedAnswer && depth === 0) {
+          msg += `\n\nCRITICAL - EXPECTED CORRECT ANSWER: ${_expectedAnswer}\nYou MUST verify if the Execution result ultimately derived this expected answer. If it did not, success MUST be false.`;
+        }
+        return msg;
+      },
       tryParseAnalysis,
     );
     const anaOpts = analyses.length > 0 ? analyses : [{ success: true, info: `Answer: ${answer}` }];
@@ -557,7 +564,13 @@ export async function execRafNode(
       'Analysis Consortium', rid, rid,
       params.analysisConsortiumSize, tk,
       SYS.analysisAgent,
-      () => `Original task:\n${String(ctx || '')?.slice(0, 400)}\n\nSub-task results:\n${allSummaries}`,
+      () => {
+        let msg = `Original task:\n${String(ctx || '')?.slice(0, 400)}\n\nSub-task results:\n${allSummaries}`;
+        if (_expectedAnswer && depth === 0) {
+          msg += `\n\nCRITICAL - EXPECTED CORRECT ANSWER: ${_expectedAnswer}\nYou MUST verify if the final Sub-task results ultimately derived this expected answer. If it did not, success MUST be false.`;
+        }
+        return msg;
+      },
       tryParseAnalysis,
     );
     const anaOpts = analyses.length > 0 ? analyses : [{ success: !allFailed, info: allSummaries }];
@@ -606,11 +619,13 @@ export function runRAF(
   problem: string,
   params: RAFParams,
   onEvent: EventCb,
+  expectedAnswer?: string,
 ): Promise<RafResult> {
   _nid = 0;
   _jsonAttempts = 0;
   _jsonSuccesses = 0;
   _cb = onEvent;
+  _expectedAnswer = expectedAnswer;
   resetCallCount();
   setCallCountCallback(n => onEvent({ type: 'call_count', count: n }));
   return execRafNode(problem, params, 0, 'root');

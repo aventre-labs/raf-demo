@@ -18,10 +18,12 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     if (headers.has('x-raf-error-finder-jury-size')) params.errorFinderJurySize = parseInt(headers.get('x-raf-error-finder-jury-size')!);
 
     let problem = '';
+    let expected = undefined;
     if (init?.body && typeof init.body === 'string') {
       try {
         const bodyObj = JSON.parse(init.body);
         problem = bodyObj.problem || '';
+        expected = bodyObj.expected;
       } catch {
         problem = init.body;
       }
@@ -35,7 +37,7 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       start(controller) {
         runRAF(problem, params, (ev: ExecutionEvent) => {
           controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(ev)}\n\n`));
-        }).then(result => {
+        }, expected).then(result => {
           controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ type: 'DONE', result })}\n\n`));
           controller.close();
         }).catch(err => {
